@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -9,7 +9,6 @@ function AdminDropdown() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
-  // гадна дарвал хаах
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!ref.current) return;
@@ -19,7 +18,6 @@ function AdminDropdown() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  // ESC дарвал хаах
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -71,15 +69,18 @@ function AdminDropdown() {
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const { user, loading, logout, role } = useAuth();
 
-  const { user, loading, logout, role } = useAuth(); // ✅ role нэмэв
+  // ✅ useSearchParams хэрэглэхгүйгээр бүтэн URL авах
+  const [qs, setQs] = useState("");
+  useEffect(() => {
+    // client дээр л ажиллана
+    setQs(window.location.search || "");
+  }, [pathname]);
 
-  // ✅ Одоогийн хуудсыг бүтнээр нь хадгална (pathname + query)
   const currentUrl = useMemo(() => {
-    const qs = searchParams?.toString();
-    return qs ? `${pathname}?${qs}` : pathname || "/";
-  }, [pathname, searchParams]);
+    return `${pathname || "/"}${qs}`;
+  }, [pathname, qs]);
 
   const goLogin = (callbackUrl: string) => {
     router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
@@ -90,7 +91,7 @@ export default function Header() {
     router.push("/");
   };
 
-  const isAdmin = role === "admin"; // ✅
+  const isAdmin = role === "admin";
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur">
@@ -103,14 +104,10 @@ export default function Header() {
         </Link>
 
         <nav className="flex items-center gap-2 text-sm">
-          <Link
-            className="rounded-full px-3 py-2 hover:bg-white/10"
-            href="/contents"
-          >
+          <Link className="rounded-full px-3 py-2 hover:bg-white/10" href="/contents">
             СУРГАЛТУУД
           </Link>
 
-          {/* ✅ Миний контент: нэвтрээгүй бол login руу шиднэ */}
           {!loading && !user ? (
             <button
               onClick={() => goLogin("/my-content")}
@@ -119,23 +116,15 @@ export default function Header() {
               МИНИЙ СУРГАЛТУУД
             </button>
           ) : (
-            <Link
-              className="rounded-full px-3 py-2 hover:bg-white/10"
-              href="/my-content"
-            >
+            <Link className="rounded-full px-3 py-2 hover:bg-white/10" href="/my-content">
               МИНИЙ СУРГАЛТУУД
             </Link>
           )}
 
-          {/* ✅ Admin dropdown: зөвхөн admin үед */}
           {!loading && user && isAdmin && <AdminDropdown />}
 
-          {/* ✅ Loading үед жижиг placeholder */}
-          {loading && (
-            <div className="ml-2 h-9 w-24 rounded-full bg-white/10 animate-pulse" />
-          )}
+          {loading && <div className="ml-2 h-9 w-24 rounded-full bg-white/10 animate-pulse" />}
 
-          {/* ✅ Нэвтрэх */}
           {!loading && !user && (
             <button
               onClick={() => goLogin(currentUrl)}
@@ -145,7 +134,6 @@ export default function Header() {
             </button>
           )}
 
-          {/* ✅ Logged in */}
           {!loading && user && (
             <div className="flex items-center gap-2">
               <div className="hidden sm:block rounded-full bg-white/10 px-3 py-2 text-white/80">

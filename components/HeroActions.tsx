@@ -1,26 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 
 export default function HeroActions() {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const { user, loading } = useAuth();
 
+  const [qs, setQs] = useState("");
+  useEffect(() => {
+    setQs(window.location.search || "");
+  }, [pathname]);
+
   const currentUrl = useMemo(() => {
-    const qs = searchParams?.toString();
-    return qs ? `${pathname}?${qs}` : (pathname || "/");
-  }, [pathname, searchParams]);
+    return `${pathname || "/"}${qs}`;
+  }, [pathname, qs]);
 
   const goLogin = () => {
     router.push(`/login?callbackUrl=${encodeURIComponent(currentUrl)}`);
   };
 
-  // loading үед UI савлахгүй жижиг placeholder
   if (loading) {
     return (
       <div className="mt-6 flex gap-3">
@@ -30,7 +32,6 @@ export default function HeroActions() {
     );
   }
 
-  // ✅ login хийгээгүй үед: Контент + Нэвтрэх
   if (!user) {
     return (
       <div className="mt-6 flex flex-wrap gap-3">
@@ -51,7 +52,6 @@ export default function HeroActions() {
     );
   }
 
-  // ✅ login хийсэн үед: Нэвтрэх алга болно (эсвэл Миний контент руу)
   return (
     <div className="mt-6 flex flex-wrap gap-3">
       <Link

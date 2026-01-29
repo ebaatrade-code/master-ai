@@ -3,6 +3,7 @@
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { usePathname } from "next/navigation";
+import { Suspense } from "react";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -16,17 +17,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   // ✅ Login / Reset password → цэвэр layout
   if (isAuthPage) {
-    return (
-      <div className="min-h-screen bg-[#0b0b0f] text-white">
-        {children}
-      </div>
-    );
+    return <div className="min-h-screen bg-[#0b0b0f] text-white">{children}</div>;
   }
 
   // ✅ Бусад бүх хуудсууд → hero background + header/footer
   return (
     <div className="relative min-h-screen bg-[#050508] text-white overflow-x-hidden flex flex-col">
-      
       {/* ✅ Background */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div
@@ -40,7 +36,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
       {/* Content */}
       <div className="relative z-10 min-h-screen flex flex-col">
-        <Header />
+        {/* ✅ ЭНЭ Л ГОЛ ЗАСВАР: Header-ийг Suspense boundary-д орууллаа */}
+        <Suspense fallback={<div className="h-[60px]" />}>
+          <Header />
+        </Suspense>
+
         <main className="flex-1">{children}</main>
         <Footer />
       </div>
