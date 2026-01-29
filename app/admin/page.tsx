@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -179,7 +181,9 @@ export default function AdminPage() {
   const [courseThumbFile, setCourseThumbFile] = useState<File | null>(null);
   const [courseThumbUploading, setCourseThumbUploading] = useState(false);
   const [courseThumbPct, setCourseThumbPct] = useState(0);
-  const courseThumbPreview = courseThumbFile ? URL.createObjectURL(courseThumbFile) : null;
+  const courseThumbPreview = courseThumbFile
+    ? URL.createObjectURL(courseThumbFile)
+    : null;
 
   /** =========================
    * Free lessons state
@@ -282,7 +286,11 @@ export default function AdminPage() {
   /** =========================
    * Helper: upload image to Storage (for FREE)
    * ========================= */
-  const uploadImageToStorage = async (path: string, file: Blob | File, onPct?: (p: number) => void) => {
+  const uploadImageToStorage = async (
+    path: string,
+    file: Blob | File,
+    onPct?: (p: number) => void
+  ) => {
     const storageRef = ref(storage, path);
     const task = uploadBytesResumable(storageRef, file as any);
 
@@ -376,11 +384,10 @@ export default function AdminPage() {
       const path = `thumbnails/courses/${courseId}/thumb_16x9.webp`;
       const storageRef = ref(storage, path);
 
-      const task = uploadBytesResumable(
-        storageRef,
-        thumbBlob as any,
-        { contentType: "image/webp", cacheControl: "public,max-age=3600" } as any
-      );
+      const task = uploadBytesResumable(storageRef, thumbBlob as any, {
+        contentType: "image/webp",
+        cacheControl: "public,max-age=3600",
+      } as any);
 
       const url: string = await new Promise((resolve, reject) => {
         task.on(
@@ -1205,7 +1212,11 @@ export default function AdminPage() {
                     ) : null}
 
                     <div className="mt-2 text-xs text-white/60 break-all">
-                      {v.videoUrl ? <span>videoUrl: {v.videoUrl}</span> : <span className="text-white/50">video байхгүй</span>}
+                      {v.videoUrl ? (
+                        <span>videoUrl: {v.videoUrl}</span>
+                      ) : (
+                        <span className="text-white/50">video байхгүй</span>
+                      )}
                     </div>
 
                     {v.videoUrl ? (
