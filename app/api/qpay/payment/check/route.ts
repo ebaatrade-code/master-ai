@@ -1,21 +1,20 @@
-// app/api/qpay/payment/check/route.ts
 import { NextResponse } from "next/server";
-import { qpayPaymentCheck } from "@/lib/qpay";
+import { qpayCheckPayment } from "@/lib/qpay";
 
-type Body = { invoiceId: string };
+type Body = { paymentId: string };
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Body;
-    if (!body?.invoiceId) {
+    if (!body?.paymentId) {
       return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
     }
 
-    const data = await qpayPaymentCheck(body.invoiceId);
+    const data = await qpayCheckPayment(body.paymentId);
     return NextResponse.json({ ok: true, data });
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "UNKNOWN" },
+      { ok: false, error: e?.message || "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
