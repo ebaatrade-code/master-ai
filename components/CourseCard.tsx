@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
-import QPayDeeplinkModal from "@/components/QPayDeeplinkModal";
 import { useAuth } from "@/components/AuthProvider";
+import PaymentChoiceModal from "@/components/PaymentChoiceModal";
+import QPayDeeplinkModal from "@/components/QPayDeeplinkModal";
 
 type Course = {
   id: string;
@@ -27,7 +28,7 @@ type Props = {
   href?: string;
 };
 
-type Deeplink = { name?: string; description?: string; link: string };
+type Deeplink = { name?: string; description?: string; logo?: string; link: string };
 
 export default function CourseCard({ course, isPurchased, href }: Props) {
   const router = useRouter();
@@ -55,40 +56,43 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
     "border-cyan-400/70 shadow-[0_0_18px_rgba(56,189,248,0.35)] " +
     "hover:border-cyan-300/90 hover:shadow-[0_0_42px_rgba(56,189,248,0.75)]";
 
-  // ✅ Deeplink payment state
-  const [payOpen, setPayOpen] = useState(false);
-  const [payStatus, setPayStatus] = useState<string>("");
-  const [orderId, setOrderId] = useState<string>("");
+  // ✅ payment choice modal
+  const [choiceOpen, setChoiceOpen] = useState(false);
+
+  // ✅ deeplink modal
+  const [bankOpen, setBankOpen] = useState(false);
+  const [payStatus, setPayStatus] = useState("");
+  const [orderId, setOrderId] = useState("");
   const [urls, setUrls] = useState<Deeplink[]>([]);
 
-  async function handleBuy(e: any) {
-    e.preventDefault();
-    e.stopPropagation();
+  const amount = useMemo(() => Number(course.price ?? 0), [course.price]);
 
-    if (!user) {
-      const cb = href || "/";
-      router.push(`/login?callbackUrl=${encodeURIComponent(cb)}`);
-      return;
-    }
+  function guardLogin(): boolean {
+    if (user) return true;
+    const cb = href || "/";
+    router.push(`/login?callbackUrl=${encodeURIComponent(cb)}`);
+    return false;
+  }
+
+  async function createBankDeeplinkInvoice() {
+    if (!guardLogin()) return;
 
     if (!course?.id) return;
 
-    const amount = Number(course.price ?? 0);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setPayOpen(true);
+      setBankOpen(true);
       setPayStatus("Үнэ буруу байна. Admin дээр course price-аа шалгаарай.");
       return;
     }
 
     try {
-      setPayOpen(true);
-      setPayStatus("Нэхэмжлэл үүсгэж байна…");
+      setBankOpen(true);
+      setPayStatus("Банкны deeplink үүсгэж байна…");
       setOrderId("");
       setUrls([]);
 
-      const idToken = await user.getIdToken();
+      const idToken = await user!.getIdToken();
 
-      // ✅ NEW: deeplink create
       const res = await fetch("/api/qpay/deeplink/create", {
         method: "POST",
         headers: {
@@ -102,17 +106,21 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
         }),
       });
 
-      const data = await res.json();
+      const data: any = await res.json().catch(() => null);
+
       if (!res.ok) {
-        setPayStatus(data?.message || data?.error || "QPay invoice үүсгэхэд алдаа гарлаа.");
+        setPayStatus(data?.message || data?.error || "Deeplink invoice үүсгэхэд алдаа гарлаа.");
         return;
       }
 
-      setOrderId(data.orderId || "");
-      setUrls((data.urls || []) as Deeplink[]);
-      setPayStatus("Банкны апп сонгоод төлбөрөө хийнэ үү.");
-    } catch {
-      setPayStatus("Алдаа гарлаа. Дахин оролдоно уу.");
+      const newOrderId = String(data?.orderId || "");
+      const newUrls = Array.isArray(data?.urls) ? (data.urls as Deeplink[]) : [];
+
+      setOrderId(newOrderId);
+      setUrls(newUrls);
+      setPayStatus("Банк сонгоод төлбөрөө хийнэ үү. Төлсний дараа “Төлбөр шалгах” дарна уу.");
+    } catch (e: any) {
+      setPayStatus(e?.message || "Алдаа гарлаа. Дахин оролдоно уу.");
     }
   }
 
@@ -135,26 +143,31 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
         body: JSON.stringify({ orderId }),
       });
 
-      const data = await res.json();
+      const data: any = await res.json().catch(() => null);
+
       if (!res.ok) {
         setPayStatus(data?.message || data?.error || "Төлбөр шалгахад алдаа гарлаа.");
         return;
       }
 
-      if (data.status === "PAID") {
+      if (data?.status === "PAID") {
         setPayStatus("Төлбөр баталгаажлаа ✅ Курс нээгдлээ!");
-        setPayOpen(false);
-
-        // ✅ refresh to update isPurchased state
+        setBankOpen(false);
         router.refresh();
-        // хүсвэл шууд course detail рүү:
-        // router.push(`/course/${course.id}`);
       } else {
         setPayStatus("Одоогоор төлбөр баталгаажаагүй байна. Дахин шалгана уу.");
       }
-    } catch {
-      setPayStatus("Шалгах үед алдаа гарлаа. Дахин оролдоно уу.");
+    } catch (e: any) {
+      setPayStatus(e?.message || "Шалгах үед алдаа гарлаа. Дахин оролдоно уу.");
     }
+  }
+
+  function onBuyClick(e: any) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!guardLogin()) return;
+    setChoiceOpen(true);
   }
 
   return (
@@ -245,7 +258,7 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
 
           {!isPurchased ? (
             <div
-              onClick={handleBuy}
+              onClick={onBuyClick}
               role="button"
               className="
                 mt-4 w-full rounded-full
@@ -279,15 +292,31 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
         </div>
       </CardWrap>
 
-      {/* ✅ NEW modal */}
+      {/* ✅ 2 сонголтын modal */}
+      <PaymentChoiceModal
+        open={choiceOpen}
+        onClose={() => setChoiceOpen(false)}
+        onChooseQpay={() => {
+          setChoiceOpen(false);
+          // QPay QR хэсгийг дараа нь холбоно (production дээр)
+          setBankOpen(true);
+          setPayStatus("QPAY QR хэсгийг дараагийн алхам дээр production дээр холбоно. Одоохондоо 'Банкны аппаар төлөх'-ийг тестлэе.");
+        }}
+        onChooseBank={() => {
+          setChoiceOpen(false);
+          createBankDeeplinkInvoice();
+        }}
+      />
+
+      {/* ✅ Deeplink modal */}
       <QPayDeeplinkModal
-        open={payOpen}
-        onClose={() => setPayOpen(false)}
+        open={bankOpen}
+        onClose={() => setBankOpen(false)}
         title={course.title}
-        amount={Number(course.price ?? 0)}
+        amount={amount}
         urls={urls}
-        onCheck={handleCheckPayment}
         statusText={payStatus}
+        onCheck={handleCheckPayment}
       />
     </>
   );

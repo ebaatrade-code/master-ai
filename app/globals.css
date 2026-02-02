@@ -1,90 +1,157 @@
+/* app/globals.css */
+/* Tailwind v4 — MUST be first */
 @import "tailwindcss";
 
-:root { color-scheme: dark; }
-body { background: #0b0b0f; color: #fff; }
-
-:root { color-scheme: dark; }
-html, body { height: 100%; }
-html { background: #0b0b0f !important; }
-body { background: #0b0b0f !important; color: #fff !important; }
-
-@keyframes shine {
-  0% {
-    transform: translateX(-120%) skewX(-20deg);
-    opacity: 0;
-  }
-  40% {
-    opacity: 0.4;
-  }
-  100% {
-    transform: translateX(120%) skewX(-20deg);
-    opacity: 0;
-  }
-}
-/* ===== Auth page background + effects (Design only) ===== */
-
-.auth-bg {
-  position: relative;
-  background: radial-gradient(1200px 600px at 50% 20%, rgba(80,140,255,0.12), transparent 60%),
-              radial-gradient(900px 500px at 80% 60%, rgba(200,80,255,0.08), transparent 60%),
-              radial-gradient(900px 500px at 20% 70%, rgba(0,220,255,0.08), transparent 60%),
-              #0b0b0f;
+/* ================================
+   OKTA NEUE — GLOBAL FONT SYSTEM
+================================ */
+@font-face {
+  font-family: "Okta Neue";
+  src: url("/fonts/okta-neue-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
-/* “network / stars” feel */
-.auth-bg::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(circle at 20% 30%, rgba(255,255,255,0.10) 0 1px, transparent 2px),
-    radial-gradient(circle at 70% 20%, rgba(255,255,255,0.08) 0 1px, transparent 2px),
-    radial-gradient(circle at 40% 80%, rgba(255,255,255,0.07) 0 1px, transparent 2px),
-    radial-gradient(circle at 85% 70%, rgba(255,255,255,0.06) 0 1px, transparent 2px);
-  background-size: 240px 240px, 280px 280px, 320px 320px, 360px 360px;
-  opacity: 0.7;
-  pointer-events: none;
+@font-face {
+  font-family: "Okta Neue";
+  src: url("/fonts/okta-neue-medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
 }
 
-/* subtle grid lines */
-.auth-bg::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
-  background-size: 120px 120px;
-  mask-image: radial-gradient(closest-side at 50% 40%, rgba(0,0,0,1), rgba(0,0,0,0));
-  opacity: 0.35;
-  pointer-events: none;
+@font-face {
+  font-family: "Okta Neue";
+  src: url("/fonts/okta-neue-semibold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
 }
 
-/* Animated button shine */
-.auth-shine {
-  background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.25) 45%, transparent 70%);
-  transform: translateX(-120%) skewX(-20deg);
-  animation: shine 2.6s ease-in-out infinite;
+/* Fallback */
+@font-face {
+  font-family: "Okta Neue Fallback";
+  src: local("Arial");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
-/* Noise layer */
-.auth-noise {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
-  background-size: 240px 240px;
+/* ================================
+   GLOBAL THEME
+================================ */
+:root {
+  color-scheme: dark;
+
+  --text-strong: rgba(255, 255, 255, 0.94);
+  --text-body: rgba(255, 255, 255, 0.88);
+  --text-muted: rgba(255, 255, 255, 0.70);
 }
-/* ✅ FORCE remove any global glow/overlay background */
-html, body {
+
+html {
+  height: 100%;
   background: #0b0b0f !important;
-  background-image: none !important;
+  font-size: 17px; /* 16 -> 17 */
 }
 
-body::before,
-body::after,
+body {
+  min-height: 100%;
+  margin: 0;
+  background: #0b0b0f !important;
+  color: var(--text-body) !important;
+
+  /* ✅ Global font */
+  font-family:
+    "Okta Neue",
+    "Okta Neue Fallback",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif !important;
+
+  font-weight: 400;
+  line-height: 1.58;
+  letter-spacing: -0.004em;
+
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* ✅ Global background image (if you want it on the whole site) */
+  background-image: url("/hero/hero-bg.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed; /* хүсэхгүй бол устгаарай */
+}
+
+/* ================================
+   TYPOGRAPHY SYSTEM
+================================ */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+h1 { font-size: 32px; line-height: 1.18; }
+h2 { font-size: 24px; line-height: 1.22; letter-spacing: -0.008em; }
+h3 { font-size: 18px; line-height: 1.28; letter-spacing: -0.006em; }
+
+label,
+button,
+.btn,
+input::placeholder {
+  font-weight: 500;
+  letter-spacing: -0.004em;
+}
+
+p,
+span,
+div,
+input,
+textarea {
+  font-weight: 400;
+  letter-spacing: -0.004em;
+}
+
+/* Forms */
+input, textarea, select {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-strong) !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: rgba(255, 255, 255, 0.50) !important;
+}
+
+/* ================================
+   FORCE CLEAN BACKGROUND LAYERS
+================================ */
 html::before,
-html::after {
+html::after,
+body::before,
+body::after {
   content: none !important;
   display: none !important;
   background: none !important;
   filter: none !important;
   box-shadow: none !important;
 }
+
+/* ================================
+   Helper classes
+================================ */
+.type-page-title { font-size: 32px; line-height: 1.18; font-weight: 600; color: var(--text-strong); }
+.type-section    { font-size: 24px; line-height: 1.22; font-weight: 600; color: var(--text-strong); }
+.type-card-title { font-size: 18px; line-height: 1.28; font-weight: 600; color: var(--text-strong); }
+.type-label      { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.type-body       { font-size: 14px; font-weight: 400; color: var(--text-body); }
+.type-muted      { font-size: 13px; font-weight: 400; color: var(--text-muted); }

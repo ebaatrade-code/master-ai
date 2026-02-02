@@ -1,34 +1,27 @@
 // lib/firebaseAdmin.ts
-import { cert, getApps, initializeApp, App } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
+import * as admin from "firebase-admin";
 
-/**
- * Firebase Admin singleton initializer
- * - Build time дээр унахгүй
- * - Runtime дээр env шалгана
- */
-function initAdmin(): App {
-  // ✅ Аль хэдийн init хийсэн бол reuse
-  if (getApps().length > 0) {
-    return getApps()[0]!;
-  }
+function getPrivateKey() {
+  const k = process.env.FIREBASE_PRIVATE_KEY;
+  if (!k) return undefined;
+  return k.replace(/\\n/g, "\n");
+}
+
+export function adminApp() {
+  if (admin.apps.length) return admin.app();
 
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY
-    ?.replace(/\\n/g, "\n")
-    .trim();
+  const privateKey = getPrivateKey();
 
-  // ⚠️ Runtime safeguard (build дээр биш)
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(
       "Missing Firebase Admin env. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY"
     );
   }
 
-  return initializeApp({
-    credential: cert({
+  return admin.initializeApp({
+    credential: admin.credential.cert({
       projectId,
       clientEmail,
       privateKey,
@@ -36,9 +29,10 @@ function initAdmin(): App {
   });
 }
 
-// 🔐 Lazy-initialized admin app
-const adminApp = initAdmin();
+export function adminAuth() {
+  return adminApp().auth();
+}
 
-// 🔐 Exports
-export const adminAuth = getAuth(adminApp);
-export const adminDb = getFirestore(adminApp);
+export function adminDb() {
+  return adminApp().firestore();
+}

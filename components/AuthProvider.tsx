@@ -7,25 +7,41 @@ import { auth, db } from "@/lib/firebase";
 
 type UserRole = "admin" | "user";
 
+type AccountStatus = "active" | "suspended";
+
 type UserDoc = {
   email: string;
   name: string;
   phone: string;
   purchasedCourseIds: string[];
-  role?: UserRole; // ✅ зөвхөн admin/user
+
+  role?: UserRole; // admin/user
   createdAt?: string;
+
+  // ✅ NEW (Profile UX-д хэрэгтэй)
+  avatarUrl?: string; // Firebase Storage url
+  accountStatus?: AccountStatus; // active/suspended (read-only)
+  authMethod?: "email" | "google" | "unknown"; // read-only
 };
 
 type AuthContextType = {
   user: User | null;
   userDoc: UserDoc | null;
   purchasedCourseIds: string[];
-  role: UserRole; // ✅ always "admin" | "user"
+  role: UserRole; // always "admin" | "user"
   loading: boolean;
   logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+function detectAuthMethod(u: User): "email" | "google" | "unknown" {
+  // providerData дээрээс уншина
+  const providers = (u.providerData || []).map((p) => p.providerId);
+  if (providers.includes("google.com")) return "google";
+  if (providers.includes("password")) return "email";
+  return "unknown";
+}
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -36,6 +52,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     const ref = doc(db, "users", u.uid);
     const snap = await getDoc(ref);
 
+    const method = detectAuthMethod(u);
+
     // ✅ new user doc
     if (!snap.exists()) {
       const newDoc: UserDoc = {
@@ -43,8 +61,13 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         name: "",
         phone: "",
         purchasedCourseIds: [],
-        role: "user", // ✅ default
+        role: "user",
         createdAt: new Date().toISOString(),
+
+        // ✅ defaults
+        avatarUrl: "",
+        accountStatus: "active",
+        authMethod: method,
       };
       await setDoc(ref, newDoc, { merge: true });
       return;
@@ -57,9 +80,25 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       await setDoc(ref, { purchasedCourseIds: [] }, { merge: true });
     }
 
-    // ✅ role байхгүй бол default user
     if (!("role" in data)) {
       await setDoc(ref, { role: "user" }, { merge: true });
+    }
+
+    if (!("createdAt" in data)) {
+      await setDoc(ref, { createdAt: new Date().toISOString() }, { merge: true });
+    }
+
+    // ✅ NEW fields
+    if (!("avatarUrl" in data)) {
+      await setDoc(ref, { avatarUrl: "" }, { merge: true });
+    }
+
+    if (!("accountStatus" in data)) {
+      await setDoc(ref, { accountStatus: "active" }, { merge: true });
+    }
+
+    if (!("authMethod" in data)) {
+      await setDoc(ref, { authMethod: method }, { merge: true });
     }
   };
 
@@ -103,11 +142,14 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
               email: d.email ?? (u.email || ""),
               name: d.name ?? "",
               phone: d.phone ?? "",
-              purchasedCourseIds: Array.isArray(d.purchasedCourseIds)
-                ? d.purchasedCourseIds
-                : [],
-              role: d.role === "admin" ? "admin" : "user", // ✅ normalize
+              purchasedCourseIds: Array.isArray(d.purchasedCourseIds) ? d.purchasedCourseIds : [],
+              role: d.role === "admin" ? "admin" : "user",
               createdAt: d.createdAt,
+
+              avatarUrl: d.avatarUrl ?? "",
+              accountStatus: d.accountStatus === "suspended" ? "suspended" : "active",
+              authMethod:
+                d.authMethod === "google" ? "google" : d.authMethod === "email" ? "email" : "unknown",
             });
 
             setLoading(false);
@@ -136,7 +178,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   };
 
   const purchasedCourseIds = userDoc?.purchasedCourseIds ?? [];
-  const role: UserRole = userDoc?.role === "admin" ? "admin" : "user"; // ✅ never null
+  const role: UserRole = userDoc?.role === "admin" ? "admin" : "user";
 
   return (
     <AuthContext.Provider value={{ user, userDoc, purchasedCourseIds, role, loading, logout }}>
