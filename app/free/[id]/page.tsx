@@ -64,8 +64,11 @@ export default function FreeLessonPage() {
     if (loadingAuth) return;
     if (!user) return;
 
-    trackFreeLessonView(id);
-  }, [id, loadingAuth, user]);
+   trackFreeLessonView({
+  lessonId: id,
+  userId: user?.uid ?? null,
+   })
+});
 
   // auth redirect хийгдэх үед flash гаргахгүй
   if (loadingAuth) {
