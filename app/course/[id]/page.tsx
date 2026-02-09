@@ -2,33 +2,40 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { collection, doc, getDoc, getDocs, orderBy, query } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
 import { getDownloadURL, ref } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 import { grantPurchase } from "@/lib/purchase";
-import { calcCoursePercent, isLessonCompleted, setLessonWatchedSec } from "@/lib/progress";
 
 type Course = {
   title: string;
   price: number;
   oldPrice?: number;
-
   thumbnailUrl?: string;
 
-  // ✅ NEW fields
-  durationDays?: number; // e.g. 30
-  durationLabel?: string; // e.g. "30 хоног", "1 сар"
-  shortDescription?: string;
+  // ✅ duration fields (admin-аас ирнэ)
+  durationDays?: number; // number (60, 90, ...)
+  durationLabel?: string; // "60 хоног", "3 сар", ...
+  duration?: string; // legacy admin field (optional)
 
-  // хуучин field байж болно (эвдэхгүй)
+  shortDescription?: string;
   description?: string;
 
-  // ✅ Course detail sections
-  whoForText?: string; // multiline text
-  learnText?: string; // multiline text
+  whoForText?: string;
+  learnText?: string;
 
-  // хуучин array хэлбэр (эвдэхгүй)
   whoFor?: string[];
   learn?: string[];
 };
@@ -54,6 +61,12 @@ type Lesson = {
   };
 };
 
+type ProgressDoc = {
+  byLessonSec: Record<string, number>;
+  lastLessonId: string;
+  updatedAt: any; // timestamp
+};
+
 const money = (n: number) => (Number.isFinite(n) ? n.toLocaleString("mn-MN") : "0");
 
 function fmtDuration(sec?: number) {
@@ -71,12 +84,55 @@ function splitLines(text?: string) {
     .filter(Boolean);
 }
 
+// ✅ progress helpers (Firestore data дээр суурилна)
+function calcCoursePercentFromMap(params: {
+  lessons: Array<{ id: string; durationSec?: number }>;
+  byLessonSec: Record<string, number>;
+  fallbackDurationSec?: number;
+}) {
+  const fallback = Math.max(60, Number(params.fallbackDurationSec ?? 300));
+  let total = 0;
+  let done = 0;
+
+  for (const l of params.lessons) {
+    const dur = Number(l.durationSec);
+    const d = Number.isFinite(dur) && dur > 0 ? dur : fallback;
+
+    total += d;
+
+    const watched = Number(params.byLessonSec?.[l.id] ?? 0);
+    done += Math.min(watched, d);
+  }
+
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  return Math.max(0, Math.min(100, percent));
+}
+
+function isLessonCompletedFromMap(params: {
+  lessonId: string;
+  byLessonSec: Record<string, number>;
+  durationSec?: number;
+}) {
+  const watched = Number(params.byLessonSec?.[params.lessonId] ?? 0);
+  const dur = Number(params.durationSec);
+
+  // ✅ 90% буюу 3 мин-ээс дээш үзсэн бол completed
+  if (Number.isFinite(dur) && dur > 0) return watched >= dur * 0.9;
+  return watched >= 180;
+}
+
+/** ✅ DESKTOP info block (өөрчлөхгүй гэж үзээд) */
 function InfoBlock({ title, items }: { title: string; items: string[] }) {
   if (!items?.length) return null;
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-      <div className="text-sm font-semibold text-white/90">{title}</div>
-      <ul className="mt-3 space-y-2 text-sm text-white/70">
+    <div className="rounded-none border-0 bg-transparent p-0">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold text-white/90">{title}</div>
+      </div>
+
+      <div className="mt-3 h-px w-full bg-white/10" />
+
+      <ul className="mt-4 space-y-2 text-sm text-white/70">
         {items.map((t, i) => (
           <li key={i} className="flex gap-2">
             <span className="mt-[2px] text-white/35">•</span>
@@ -88,17 +144,55 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
   );
 }
 
+/** ✅ MOBILE info block (цагаан background дээр хар бичигтэй) */
+function MobileInfoBlock({ title, items }: { title: string; items: string[] }) {
+  if (!items?.length) return null;
+  return (
+    <div className="rounded-none border-0 bg-transparent p-0">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-extrabold text-black">{title}</div>
+      </div>
+
+      <div className="mt-3 h-px w-full bg-black/10" />
+
+      <ul className="mt-4 space-y-2 text-sm text-black/75">
+        {items.map((t, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="mt-[2px] text-black/35">•</span>
+            <span>{t}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function formatExpiresText(ms?: number | null) {
+  if (!ms || !Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("mn-MN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function CoursePage() {
   const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const courseId = params.id;
+
+  // ✅ app/course/[id]/page.tsx -> params.id
+  const params = useParams<{ id?: string }>();
+  const courseId = String(params?.id ?? "").trim();
 
   const { user, loading, purchasedCourseIds } = useAuth();
 
-  const isPurchased = useMemo(
-    () => purchasedCourseIds.includes(courseId),
-    [purchasedCourseIds, courseId]
-  );
+  const isPurchased = useMemo(() => {
+    if (!courseId) return false;
+    return purchasedCourseIds.includes(courseId);
+  }, [purchasedCourseIds, courseId]);
 
   const [course, setCourse] = useState<Course | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -112,6 +206,9 @@ export default function CoursePage() {
   // ✅ purchased view tab
   const [tab, setTab] = useState<"list" | "desc">("list");
 
+  // ✅ NOT PURCHASED mobile tab
+  const [npTab, setNpTab] = useState<"details" | "content">("content");
+
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -124,14 +221,55 @@ export default function CoursePage() {
     return lessons.find((l) => l.id === selectedLessonId) ?? null;
   }, [selectedLessonId, lessons]);
 
-  // ✅ PROGRESS states
+  // ✅ PROGRESS states (Firestore)
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [coursePercent, setCoursePercent] = useState(0);
+  const [byLessonSec, setByLessonSec] = useState<Record<string, number>>({});
   const lastSaveRef = useRef(0);
 
-  // fetch course + lessons
+  const progressDocRef = useMemo(() => {
+    if (!user?.uid) return null;
+    if (!courseId) return null;
+    return doc(db, "users", user.uid, "courseProgress", courseId);
+  }, [user?.uid, courseId]);
+
+  // ✅ PURCHASE EXPIRY
+  const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
+  const [isExpired, setIsExpired] = useState(false);
+
+  // ✅ прогресс хадгалах helper
+  const saveProgress = async (lessonId: string, nextSec: number) => {
+    if (!progressDocRef) return;
+
+    setByLessonSec((p) => ({ ...p, [lessonId]: nextSec }));
+
+    try {
+      await updateDoc(progressDocRef, {
+        [`byLessonSec.${lessonId}`]: nextSec,
+        lastLessonId: lessonId,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      try {
+        await setDoc(
+          progressDocRef,
+          {
+            byLessonSec: { [lessonId]: nextSec },
+            lastLessonId: lessonId,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (e2) {
+        console.error("progress write error:", err, e2);
+      }
+    }
+  };
+
+  // ✅ fetch course + lessons
   useEffect(() => {
     if (loading) return;
+    if (!courseId) return;
 
     const run = async () => {
       setFetching(true);
@@ -143,10 +281,7 @@ export default function CoursePage() {
         }
         setCourse(courseSnap.data() as Course);
 
-        const lessonsQ = query(
-          collection(db, "courses", courseId, "lessons"),
-          orderBy("order", "asc")
-        );
+        const lessonsQ = query(collection(db, "courses", courseId, "lessons"), orderBy("order", "asc"));
         const lessonsSnap = await getDocs(lessonsQ);
 
         const list: Lesson[] = [];
@@ -162,12 +297,102 @@ export default function CoursePage() {
     run();
   }, [loading, courseId, router]);
 
-  // fetch videoSrc on lesson change
+  // ✅ load purchase expiry from user doc (once purchased)
+  useEffect(() => {
+    const run = async () => {
+      if (!isPurchased) {
+        setExpiresAtMs(null);
+        setIsExpired(false);
+        return;
+      }
+      if (!user?.uid) return;
+      if (!courseId) return;
+
+      try {
+        const userSnap = await getDoc(doc(db, "users", user.uid));
+        const data = userSnap.exists() ? (userSnap.data() as any) : null;
+
+        const p = data?.purchases?.[courseId];
+        const exp = p?.expiresAt as Timestamp | undefined;
+
+        const ms = exp?.toMillis?.() ?? null;
+        setExpiresAtMs(ms);
+
+        if (ms && Date.now() > ms) setIsExpired(true);
+        else setIsExpired(false);
+      } catch (e) {
+        console.error("load purchase expiry error:", e);
+        setExpiresAtMs(null);
+        setIsExpired(false);
+      }
+    };
+
+    run();
+  }, [isPurchased, user?.uid, courseId]);
+
+  // ✅ NEW: expiresAt хүрмэгц автоматаар expired болгох (refresh шаардлагагүй)
+  useEffect(() => {
+    if (!expiresAtMs) return;
+
+    const msLeft = expiresAtMs - Date.now();
+    if (msLeft <= 0) {
+      setIsExpired(true);
+      return;
+    }
+
+    const t = setTimeout(() => {
+      setIsExpired(true);
+      setToast("⛔ Сургалтын хугацаа дууслаа");
+    }, msLeft);
+
+    return () => clearTimeout(t);
+  }, [expiresAtMs]);
+
+  // ✅ load progress from Firestore (once user + purchased + NOT expired)
+  useEffect(() => {
+    const run = async () => {
+      if (!isPurchased) return;
+      if (isExpired) return;
+      if (!user?.uid) return;
+      if (!progressDocRef) return;
+
+      try {
+        const snap = await getDoc(progressDocRef);
+        if (!snap.exists()) {
+          const init: ProgressDoc = {
+            byLessonSec: {},
+            lastLessonId: "",
+            updatedAt: serverTimestamp(),
+          } as any;
+          await setDoc(progressDocRef, init, { merge: true });
+          setByLessonSec({});
+          return;
+        }
+
+        const data = snap.data() as any;
+        const raw = (data?.byLessonSec ?? {}) as Record<string, any>;
+
+        const fixed: Record<string, number> = {};
+        for (const k of Object.keys(raw)) {
+          const v = Number(raw[k] ?? 0);
+          fixed[k] = Number.isFinite(v) ? v : 0;
+        }
+        setByLessonSec(fixed);
+      } catch (e) {
+        console.error("load progress error:", e);
+      }
+    };
+
+    run();
+  }, [isPurchased, isExpired, user?.uid, progressDocRef]);
+
+  // ✅ fetch videoSrc on lesson change (ONLY if purchased + NOT expired)
   useEffect(() => {
     const run = async () => {
       setVideoSrc(null);
 
       if (!isPurchased) return;
+      if (isExpired) return;
       if (!selectedLessonId) return;
 
       const lesson = lessons.find((l) => l.id === selectedLessonId);
@@ -198,19 +423,24 @@ export default function CoursePage() {
     };
 
     run();
-  }, [selectedLessonId, lessons, isPurchased]);
+  }, [selectedLessonId, lessons, isPurchased, isExpired]);
 
-  // recalc percent when lessons ready / change
+  // ✅ recalc percent when lessons/progress change (ONLY if NOT expired)
   useEffect(() => {
     if (!isPurchased) return;
-    if (!courseId) return;
+    if (isExpired) return;
     if (!lessons.length) return;
 
-    const pct = calcCoursePercent({ courseId, lessons, fallbackDurationSec: 300 });
+    const pct = calcCoursePercentFromMap({
+      lessons,
+      byLessonSec,
+      fallbackDurationSec: 300,
+    });
     setCoursePercent(pct);
-  }, [isPurchased, courseId, lessons, selectedLessonId]);
+  }, [isPurchased, isExpired, lessons, byLessonSec]);
 
   const handleBuyNow = async () => {
+    if (!courseId) return;
     if (!user) {
       router.push(`/login?callbackUrl=${encodeURIComponent(`/course/${courseId}`)}`);
       return;
@@ -229,8 +459,10 @@ export default function CoursePage() {
   }
   if (!course) return null;
 
+  // ✅ duration label: admin-аас ирсэн утгыг 1:1 харуулна
   const durationLabel =
-    (course.durationLabel || "").trim() ||
+    String(course.durationLabel || "").trim() ||
+    String(course.duration || "").trim() ||
     (Number.isFinite(Number(course.durationDays)) && Number(course.durationDays) > 0
       ? `${Number(course.durationDays)} хоног`
       : "30 хоног");
@@ -238,7 +470,6 @@ export default function CoursePage() {
   const whoForItems = course.whoFor?.length ? course.whoFor : splitLines(course.whoForText);
   const learnItems = course.learn?.length ? course.learn : splitLines(course.learnText);
 
-  // fallback (эвдэхгүй)
   const whoForFallback = [
     "AI ашиглаж орлого олох зорилготой хүмүүс",
     "Видео/контент хийж сошиалд өсөх хүсэлтэй",
@@ -249,45 +480,81 @@ export default function CoursePage() {
   const learnFallback = [
     "AI-аар зураг/видео/контент хийх бодит workflow",
     "Free + Pro tool-уудыг зөв хослуулж ашиглах",
+    "Free + Pro tool-уудыг зөв хослуулж ашиглах",
     "Reels/Ads-д тохирсон контент бүтэц, темп",
     "Бэлэн жишээн дээр давтаж хийж сурах",
   ];
 
   // =========================================================
-  // ✅ PURCHASED VIEW
+  // ✅ PURCHASED VIEW (өөрчлөхгүй)
   // =========================================================
   if (isPurchased) {
-    return (
-      <div
-        className="min-h-[calc(100vh-80px)] text-white"
-        style={{
-          background:
-            "radial-gradient(1200px 700px at 50% 0%, rgba(17,67,132,0.55), rgba(3,18,42,0.95)), radial-gradient(circle at 10% 20%, rgba(0,140,255,0.18), transparent 45%), radial-gradient(circle at 90% 80%, rgba(0,255,170,0.10), transparent 55%)",
-        }}
-      >
-        <div
-          className="pointer-events-none fixed inset-0 opacity-55"
-          style={{
-            backgroundImage: "radial-gradient(rgba(120,200,255,0.28) 1px, transparent 1px)",
-            backgroundSize: "22px 22px",
-            backgroundPosition: "0 0",
-            maskImage: "radial-gradient(700px 520px at 50% 30%, black 60%, transparent 100%)",
-            WebkitMaskImage:
-              "radial-gradient(700px 520px at 50% 30%, black 60%, transparent 100%)",
-          }}
-        />
+    // ✅ expired UI
+    if (isExpired) {
+      return (
+        <div className="lesson-viewer min-h-[calc(100vh-80px)]">
+          <div className="relative mx-auto max-w-5xl px-6 pt-10 pb-16">
+            <div className="flex justify-center">
+              <div className="w-full max-w-3xl px-6 py-2 text-center">
+                <div className="text-2xl sm:text-3xl font-extrabold tracking-wide text-yellow-400">
+                  {course.title}
+                </div>
+              </div>
+            </div>
 
+            <div className="mt-6 flex justify-center">
+              <div className="w-full max-w-3xl rounded-2xl border border-red-400/25 bg-black/20 p-6">
+                <div className="text-lg font-extrabold text-red-300">⛔ Сургалтын хугацаа дууссан байна</div>
+
+                <div className="mt-2 text-sm text-white/70">
+                  Хугацаа: <span className="text-white/90 font-semibold">{durationLabel}</span>
+                </div>
+
+                {expiresAtMs ? (
+                  <div className="mt-1 text-sm text-white/60">
+                    Дууссан огноо: <span className="text-white/80">{formatExpiresText(expiresAtMs)}</span>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 text-sm text-white/65">
+                  Та дахин идэвхжүүлэх бол “Худалдаж авах” хэсгээс шинэ хугацаатайгаар авна.
+                </div>
+
+                <div className="mt-6">
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/course/${courseId}`)}
+                    className="rounded-full px-6 py-3 text-sm font-extrabold tracking-wide border border-white/12 bg-white/5 hover:bg-white/10"
+                  >
+                    Буцах →
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {toast ? (
+              <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-white backdrop-blur">
+                {toast}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="lesson-viewer min-h-[calc(100vh-80px)]">
         <div className="relative mx-auto max-w-5xl px-6 pt-10 pb-16">
           {/* ✅ title only */}
           <div className="flex justify-center">
-            <div className="w-full max-w-3xl rounded-full bg-black/25 px-6 py-4 text-center shadow-[0_18px_60px_rgba(0,0,0,0.35)] border border-white/10">
+            <div className="w-full max-w-3xl px-6 py-2 text-center">
               <div className="text-2xl sm:text-3xl font-extrabold tracking-wide text-yellow-400">
                 {course.title}
               </div>
             </div>
           </div>
 
-          {/* ✅ PROGRESS (Skool style) */}
+          {/* ✅ PROGRESS */}
           <div className="mt-6 flex justify-center">
             <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-black/20 p-4">
               <div className="flex items-center justify-between gap-3">
@@ -320,10 +587,16 @@ export default function CoursePage() {
               <div className="mb-3 flex items-center justify-between">
                 <div className="text-sm font-semibold text-white/85">Видео үзэх</div>
 
-                <div className="text-xs">
+                <div className="text-xs flex items-center gap-2">
                   <span className="rounded-full border border-emerald-300/25 bg-emerald-500/10 px-3 py-1 text-emerald-100">
                     Хугацаа: {durationLabel}
                   </span>
+
+                  {expiresAtMs ? (
+                    <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-white/70">
+                      Дуусах: {formatExpiresText(expiresAtMs)}
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
@@ -345,23 +618,51 @@ export default function CoursePage() {
                     disablePictureInPicture
                     onContextMenu={(e) => e.preventDefault()}
                     onLoadedMetadata={() => {
-                      const pct = calcCoursePercent({ courseId, lessons, fallbackDurationSec: 300 });
+                      const pct = calcCoursePercentFromMap({
+                        lessons,
+                        byLessonSec,
+                        fallbackDurationSec: 300,
+                      });
                       setCoursePercent(pct);
                     }}
-                    onTimeUpdate={(e) => {
+                    onTimeUpdate={async (e) => {
                       if (!selectedLessonId) return;
+                      if (!progressDocRef) return;
 
                       const now = Date.now();
-                      if (now - lastSaveRef.current < 3000) return; // 3 sec throttle
+                      if (now - lastSaveRef.current < 3000) return;
                       lastSaveRef.current = now;
 
-                      const el = e.currentTarget;
-                      const t = Number(el.currentTime || 0);
+                      const t = Math.floor(Number(e.currentTarget.currentTime || 0));
+                      const prev = Number(byLessonSec?.[selectedLessonId] ?? 0);
+                      const next = Math.max(prev, t);
 
-                      setLessonWatchedSec(courseId, selectedLessonId, t);
+                      await saveProgress(selectedLessonId, next);
+                    }}
+                    onEnded={async (e) => {
+                      if (!selectedLessonId) return;
+                      if (!progressDocRef) return;
 
-                      const pct = calcCoursePercent({ courseId, lessons, fallbackDurationSec: 300 });
-                      setCoursePercent(pct);
+                      const dur = Math.floor(Number(e.currentTarget.duration || 0));
+                      if (!dur || !Number.isFinite(dur)) return;
+
+                      const prev = Number(byLessonSec?.[selectedLessonId] ?? 0);
+                      const next = Math.max(prev, dur);
+
+                      lastSaveRef.current = Date.now();
+                      await saveProgress(selectedLessonId, next);
+                    }}
+                    onPause={async (e) => {
+                      if (!selectedLessonId) return;
+                      if (!progressDocRef) return;
+
+                      const t = Math.floor(Number(e.currentTarget.currentTime || 0));
+                      const prev = Number(byLessonSec?.[selectedLessonId] ?? 0);
+                      const next = Math.max(prev, t);
+
+                      if (next <= prev) return;
+                      lastSaveRef.current = Date.now();
+                      await saveProgress(selectedLessonId, next);
                     }}
                   />
                 </div>
@@ -427,9 +728,7 @@ export default function CoursePage() {
                   </div>
 
                   <div className="mt-4 text-sm leading-7 text-white/75">
-                    {selectedLesson?.description?.trim()
-                      ? selectedLesson.description
-                      : "Тайлбар оруулаагүй байна."}
+                    {selectedLesson?.description?.trim() ? selectedLesson.description : "Тайлбар оруулаагүй байна."}
                   </div>
                 </div>
               ) : (
@@ -443,10 +742,10 @@ export default function CoursePage() {
                       {lessons.map((l, idx) => {
                         const active = l.id === selectedLessonId;
                         const t = fmtDuration(l.durationSec);
-                        const completed = isLessonCompleted({
-                          courseId,
+                        const completed = isLessonCompletedFromMap({
                           lessonId: l.id,
                           durationSec: l.durationSec,
+                          byLessonSec,
                         });
 
                         return (
@@ -457,13 +756,13 @@ export default function CoursePage() {
                               "group w-full rounded-2xl border px-4 py-3 text-left transition",
                               "focus:outline-none focus:ring-2 focus:ring-white/10",
                               active
-                                ? "border-white/25 bg-white/10"
-                                : "border-white/10 bg-black/20 hover:bg-white/5 hover:border-white/15",
+                                ? "border-2 border-emerald-300/80 bg-emerald-400/10 shadow-[0_0_0_1px_rgba(52,211,153,0.20),0_0_22px_rgba(52,211,153,0.35),0_18px_60px_rgba(0,0,0,0.35)]"
+                                : "border border-white/10 bg-black/20 hover:bg-white/5 hover:border-white/15",
                             ].join(" ")}
                           >
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
-                                <div className="truncate text-[15px] font-extrabold text-white/90 group-hover:text-white">
+                                <div className="truncate text-[16px] font-black text-white tracking-wide">
                                   {idx + 1}. {l.title}
                                 </div>
 
@@ -508,152 +807,388 @@ export default function CoursePage() {
 
   // =========================================================
   // ✅ NOT PURCHASED VIEW
+  // ✅ MOBILE: цагаан background + хар бичиг
+  // ✅ DESKTOP: хуучин dark layout (өөрчлөхгүй)
   // =========================================================
   return (
-    <div className="mx-auto max-w-6xl px-6 pt-10 pb-10 text-white">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold">{course.title}</h1>
-        {course.shortDescription ? (
-          <p className="text-white/70">{course.shortDescription}</p>
-        ) : course.description ? (
-          <p className="text-white/70">{course.description}</p>
-        ) : null}
-      </div>
-
-      <div className="mt-8 grid gap-6 lg:grid-cols-[360px_1fr]">
-        <aside className="space-y-5">
+    <>
+      {/* =========================
+          ✅ MOBILE (lg-): WHITE / BLACK
+      ========================= */}
+      <div className="lg:hidden min-h-[calc(100vh-80px)] bg-white text-black overflow-x-hidden">
+        <div className="mx-auto max-w-6xl px-6 pt-8 pb-12">
+          {/* HERO (clean) */}
           {course.thumbnailUrl ? (
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur">
-              <div className="relative aspect-[16/9] w-full">
-                <img
-                  src={course.thumbnailUrl}
-                  alt=""
-                  aria-hidden="true"
-                  className="absolute inset-0 h-full w-full object-cover blur-2xl scale-110 opacity-40"
-                />
-                <div className="absolute inset-0 bg-black/45" />
-                <img
-                  src={course.thumbnailUrl}
-                  alt={course.title}
-                  className="relative z-10 h-full w-full object-cover"
-                />
+            <div className="mx-auto w-full overflow-hidden rounded-[18px] border border-black/10 bg-white shadow-sm">
+              <div className="relative aspect-video w-full">
+                <img src={course.thumbnailUrl} alt={course.title} className="h-full w-full object-cover" />
               </div>
             </div>
           ) : null}
 
-          {/* PRICE CARD */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-200">
-                  ✓
-                </span>
-                <div className="text-base font-extrabold text-white">{durationLabel}</div>
-              </div>
-
-              <div className="text-right">
-                <div className="text-lg font-bold">
-                  {money(Number(course.price ?? 0))}₮ <span className="text-xs text-white/55">/ сар</span>
-                </div>
-                {course.oldPrice ? (
-                  <div className="text-xs text-white/45 line-through">
-                    {money(Number(course.oldPrice))}₮
-                  </div>
-                ) : null}
-              </div>
+          {/* Title + short desc */}
+          <div className="mt-6">
+            <div className="flex items-center gap-3">
+              <div className="mt-[10px] h-5 w-[2px] rounded-full bg-black/20" />
+              <div className="text-xs font-extrabold tracking-wide text-black/45">БҮЛЭГ 1</div>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-3 min-w-0">
+              <div className="text-xl font-extrabold text-black leading-snug">{course.title}</div>
+
+              <div className="mt-2 text-sm leading-6 text-black/70">
+                {course.shortDescription?.trim()
+                  ? course.shortDescription
+                  : course.description?.trim()
+                  ? course.description
+                  : "Энэ сургалтаар системтэйгээр үзэж, давтаж хийж сурна."}
+              </div>
+            </div>
+          </div>
+
+          {/* BUY CARD (clean white) */}
+          <div className="mt-5">
+            <div className="relative rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 text-[14px] font-extrabold text-black">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-black/70">
+                    <span className="h-2.5 w-2.5 rounded-full bg-black/70" />
+                  </span>
+                  <span className="tracking-wide">{durationLabel}</span>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-xl font-extrabold tracking-tight text-black">{money(Number(course.price ?? 0))}₮</div>
+
+                  {course.oldPrice ? (
+                    <div className="mt-0.5 text-sm font-bold line-through text-red-500">
+                      {money(Number(course.oldPrice))}₮
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={handleBuyNow}
                 disabled={mockBuying}
-                className="w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-60"
+                className="
+                  mt-3 w-full rounded-2xl
+                  px-5 py-3
+                  text-[13px] font-extrabold uppercase tracking-wide
+                  text-white
+                  bg-gradient-to-r from-cyan-400 to-blue-500
+                  shadow-[0_10px_24px_rgba(0,120,255,0.22)]
+                  hover:from-cyan-300 hover:to-blue-400
+                  transition-all duration-300
+                  disabled:opacity-60
+                "
               >
-                {mockBuying ? "Идэвхжүүлж байна..." : "Худалдан авах"}
+                {mockBuying ? "ИДЭВХЖҮҮЛЖ БАЙНА..." : "Худалдан авах"}
+              </button>
+            </div>
+          </div>
+
+          {/* TABS (mobile) — LEFT: content, RIGHT: details */}
+          <div className="mt-5">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-black/10 bg-white p-2 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setNpTab("content")}
+                className={[
+                  "h-9 rounded-xl text-center text-[11px] font-extrabold tracking-wide transition",
+                  npTab === "content"
+                    ? "bg-black/5 text-black border border-black/10"
+                    : "text-black/55 hover:text-black",
+                ].join(" ")}
+              >
+                Хичээлийн агуулга
               </button>
 
-              {!user ? (
-                <div className="mt-3 text-xs text-white/55">
-                  Видео үзэхийн тулд нэвтрэх шаардлагатай.{" "}
-                  <button
-                    className="underline underline-offset-4 hover:text-white"
-                    onClick={() =>
-                      router.push(`/login?callbackUrl=${encodeURIComponent(`/course/${courseId}`)}`)
-                    }
-                  >
-                    Нэвтрэх
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <InfoBlock
-            title="Энэ сургалт хэнд тохирох вэ?"
-            items={whoForItems.length ? whoForItems : whoForFallback}
-          />
-          <InfoBlock
-            title="Юу сурах вэ?"
-            items={learnItems.length ? learnItems : learnFallback}
-          />
-        </aside>
-
-        {/* RIGHT */}
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-semibold text-white/85">Үзэх</div>
-              <div className="text-xs text-white/50">
-                {lessons.length ? `${lessons.length} хичээл` : "0 хичээл"}
-              </div>
+              <button
+                type="button"
+                onClick={() => setNpTab("details")}
+                className={[
+                  "h-9 rounded-xl text-center text-[11px] font-extrabold tracking-wide transition",
+                  npTab === "details"
+                    ? "bg-black/5 text-black border border-black/10"
+                    : "text-black/55 hover:text-black",
+                ].join(" ")}
+              >
+                Дэлгэрэнгүй мэдээлэл
+              </button>
             </div>
 
-            {!user ? (
-              <div className="rounded-xl border border-white/10 bg-black/20 p-6 text-white/70">
-                🔐 Видео үзэхийн тулд эхлээд нэвтрэнэ.
-              </div>
-            ) : (
-              <div className="rounded-xl border border-white/10 bg-black/20 p-6 text-white/70">
-                🔒 Видео үзэх боломжгүй байна. Худалдаж авсны дараа нээгдэнэ.
-              </div>
-            )}
-          </div>
-
-          <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-semibold text-white/85">Хичээлүүд</div>
-              <div className="text-xs text-white/50">Preview</div>
-            </div>
-
-            {lessons.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-black/20 p-6 text-white/70">
-                Одоогоор lesson алга.
-              </div>
-            ) : (
-              <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
-                {lessons.map((l, idx) => (
-                  <div
-                    key={l.id}
-                    className="w-full rounded-2xl border border-white/10 bg-black/10 px-5 py-4 text-left"
-                  >
-                    <div className="text-[15px] font-extrabold text-white/90">
-                      {idx + 1}. {l.title}
+            {/* PANELS */}
+            <div className="mt-4">
+              {npTab === "content" ? (
+                <div className="space-y-3">
+                  {lessons.length === 0 ? (
+                    <div className="rounded-2xl border border-black/10 bg-white p-6 text-black/70 shadow-sm">
+                      Одоогоор lesson алга.
                     </div>
-                    <div className="mt-1 text-xs text-white/55">Худалдаж авсны дараа үзнэ</div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ) : (
+                    lessons.map((l, idx) => {
+                      const t = fmtDuration(l.durationSec);
+                      return (
+                        <div
+                          key={l.id}
+                          className="flex items-center gap-4 rounded-2xl border border-black/10 bg-white px-4 py-4 shadow-sm"
+                        >
+                          <div className="h-12 w-20 shrink-0 overflow-hidden rounded-xl border border-black/10 bg-black/5">
+                            {course.thumbnailUrl ? (
+                              <img
+                                src={course.thumbnailUrl}
+                                alt=""
+                                aria-hidden="true"
+                                className="h-full w-full object-cover opacity-95"
+                              />
+                            ) : null}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[15px] font-black text-black tracking-wide">
+                              {idx + 1}. {l.title}
+                            </div>
+                            <div className="mt-1 line-clamp-1 text-xs text-black/60">
+                              {l.description?.trim() ? l.description : "Худалдаж авсны дараа энэ хичээл нээгдэнэ."}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-right text-xs font-bold text-black/70">{t ? t : "—"}</div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-black/10 bg-white p-5 space-y-6 shadow-sm">
+                  <MobileInfoBlock
+                    title="Энэ сургалт хэнд тохирох вэ?"
+                    items={whoForItems.length ? whoForItems : whoForFallback}
+                  />
+                  <MobileInfoBlock
+                    title="Юу сурах вэ?"
+                    items={learnItems.length ? learnItems : learnFallback}
+                  />
+                </div>
+              )}
+            </div>
           </div>
-        </section>
+
+          {toast ? (
+            <div className="fixed right-4 top-4 z-[60] rounded-xl border border-black/10 bg-white/95 px-4 py-2 text-sm text-black shadow-sm">
+              {toast}
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      {toast ? (
-        <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-white backdrop-blur">
-          {toast}
+      {/* =========================
+          ✅ DESKTOP (lg+): хуучин dark layout (өөрчлөхгүй)
+      ========================= */}
+      <div
+        className="hidden lg:block min-h-[calc(100vh-80px)] text-white overflow-x-hidden"
+        style={{
+          background:
+            "radial-gradient(1200px 700px at 50% 0%, rgba(120,120,120,0.10), rgba(0,0,0,0.95)), radial-gradient(circle at 10% 20%, rgba(255,200,0,0.05), transparent 45%), radial-gradient(circle at 90% 80%, rgba(0,255,170,0.06), transparent 55%)",
+        }}
+      >
+        <div className="mx-auto max-w-6xl px-6 pt-8 pb-12">
+          <div className="hidden lg:block">
+            {/* ✅ HERO THUMBNAIL */}
+            {course.thumbnailUrl ? (
+              <div className="mx-auto w-full max-w-6xl overflow-hidden rounded-[28px] border border-white/10 bg-black/35 shadow-[0_22px_90px_rgba(0,0,0,0.55)]">
+                <div className="relative aspect-video w-full">
+                  <img
+                    src={course.thumbnailUrl}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 h-full w-full object-cover blur-3xl scale-125 opacity-45"
+                  />
+                  <div className="absolute inset-0 bg-black/55" />
+                  <img
+                    src={course.thumbnailUrl}
+                    alt={course.title}
+                    className="relative z-10 h-full w-full object-contain"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-8 grid gap-8 lg:grid-cols-2">
+              {/* LEFT */}
+              <section className="px-1">
+                <div className="mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="mt-[10px] h-5 w-[2px] rounded-full bg-white/20" />
+                    <div className="text-xs font-extrabold tracking-wide text-white/45">БҮЛЭГ 1</div>
+                  </div>
+
+                  <div className="mt-2 flex gap-3">
+                    <div className="mt-[8px] h-7 w-[2px] rounded-full bg-white/25" />
+                    <div className="min-w-0">
+                      <div className="truncate text-xl font-extrabold text-white/90">{course.title}</div>
+                      <div className="mt-2 text-sm leading-6 text-white/60">
+                        {course.shortDescription?.trim()
+                          ? course.shortDescription
+                          : course.description?.trim()
+                          ? course.description
+                          : "Энэ сургалтаар системтэйгээр үзэж, давтаж хийж сурна."}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 h-px w-full bg-white/10" />
+                </div>
+
+                <div className="space-y-4">
+                  {lessons.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-6 text-white/70">
+                      Одоогоор lesson алга.
+                    </div>
+                  ) : (
+                    lessons.map((l, idx) => {
+                      const t = fmtDuration(l.durationSec);
+
+                      return (
+                        <div
+                          key={l.id}
+                          className={[
+                            "flex items-center gap-5",
+                            "rounded-3xl border border-white/10",
+                            "bg-black/20 px-6 py-6",
+                            "min-h-[120px]",
+                            "hover:bg-black/30 transition",
+                          ].join(" ")}
+                        >
+                          <div className="h-16 w-28 overflow-hidden rounded-2xl border border-white/10 bg-black/25">
+                            {course.thumbnailUrl ? (
+                              <img
+                                src={course.thumbnailUrl}
+                                alt=""
+                                aria-hidden="true"
+                                className="h-full w-full object-cover opacity-90"
+                              />
+                            ) : null}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[16px] font-black text-white tracking-wide drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]">
+                              {idx + 1}. {l.title}
+                            </div>
+                            <div className="mt-2 line-clamp-2 text-xs text-white/55">
+                              {l.description?.trim() ? l.description : "Худалдаж авсны дараа энэ хичээл нээгдэнэ."}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <div className="text-xs font-extrabold text-white/70">{t ? t : "—"}</div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              {/* RIGHT */}
+              <aside className="space-y-5 lg:sticky lg:top-24 h-fit">
+                <div className="space-y-5">
+                  <div
+                    className="
+                    relative
+                    rounded-2xl
+                    border
+                    border-cyan-300/70
+                    bg-black/40
+                    p-6
+                    shadow-[
+                      inset_0_0_12px_rgba(34,211,238,0.35),
+                      0_0_12px_rgba(34,211,238,0.55),
+                      0_0_32px_rgba(34,211,238,0.45),
+                      0_0_72px_rgba(34,211,238,0.25)
+                    ]
+                    transition-all
+                    duration-300
+                    hover:border-cyan-200
+                    hover:shadow-[
+                      inset_0_0_18px_rgba(34,211,238,0.55),
+                      0_0_18px_rgba(34,211,238,0.8),
+                      0_0_48px_rgba(34,211,238,0.6),
+                      0_0_96px_rgba(34,211,238,0.35)
+                    ]
+                  "
+                  >
+                    <div className="mb-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3 text-lg font-extrabold text-white">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-white">
+                          <span className="h-2.5 w-2.5 rounded-full bg-white" />
+                        </span>
+                        <span className="tracking-wide">{durationLabel}</span>
+                      </div>
+
+                      <div className="text-right">
+                        <div
+                          className="
+                          text-2xl font-extrabold tracking-tight
+                          text-white
+                          drop-shadow-[0_0_10px_rgba(255,255,255,0.9)]
+                        "
+                        >
+                          {money(Number(course.price ?? 0))}₮
+                        </div>
+
+                        {course.oldPrice && (
+                          <div
+                            className="
+                            mt-0.5 text-sm font-extrabold line-through
+                            text-red-500
+                            drop-shadow-[0_0_10px_rgba(239,68,68,1)]
+                          "
+                          >
+                            {money(Number(course.oldPrice))}₮
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleBuyNow}
+                      disabled={mockBuying}
+                      className="
+                      w-full rounded-full
+                      px-6 py-4
+                      text-sm font-extrabold uppercase tracking-wide
+                      text-white
+                      bg-gradient-to-r from-cyan-400 to-blue-500
+                      shadow-[0_0_35px_rgba(0,180,255,0.75)]
+                      hover:from-cyan-300 hover:to-blue-400
+                      hover:shadow-[0_0_45px_rgba(0,180,255,0.95)]
+                      transition-all duration-300
+                      disabled:opacity-60
+                    "
+                    >
+                      {mockBuying ? "ИДЭВХЖҮҮЛЖ БАЙНА..." : "ХУДАЛДАЖ АВАХ →"}
+                    </button>
+                  </div>
+                </div>
+
+                <InfoBlock title="Энэ сургалт хэнд тохирох вэ?" items={whoForItems.length ? whoForItems : whoForFallback} />
+
+                <InfoBlock title="Юу сурах вэ?" items={learnItems.length ? learnItems : learnFallback} />
+              </aside>
+            </div>
+          </div>
+
+          {toast ? (
+            <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-white backdrop-blur">
+              {toast}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-    </div>
+      </div>
+    </>
   );
 }

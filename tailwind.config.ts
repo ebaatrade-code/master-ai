@@ -1,3 +1,4 @@
+// tailwind.config.ts
 import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -7,6 +8,22 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      /* =========================
+         FONT SYSTEM (Mulish)
+      ========================= */
+      fontFamily: {
+        // 👉 className: font-main
+        main: [
+          "Mulish",
+          "system-ui",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Segoe UI"',
+          "Arial",
+          "sans-serif",
+        ],
+      },
+
       colors: {
         // 🖤 Core dark system
         surface: "#0b0b0f",
@@ -22,12 +39,21 @@ const config: Config = {
         textPrimary: "#ffffff",
         textSecondary: "rgba(255,255,255,0.65)",
         textMuted: "rgba(255,255,255,0.45)",
+
+        // ✨ Gold system (premium)
+        gold: "#F4D27A",
+        gold2: "#F1C45B",
+        goldSoft: "rgba(244,210,122,0.20)",
+        goldGlow: "rgba(244,210,122,0.28)",
       },
 
       boxShadow: {
-        // Profile card shadow
         card: "0 20px 60px rgba(0,0,0,0.7)",
         neon: "0 0 0 1px rgba(255,255,255,0.08), 0 0 30px rgba(79,209,255,0.15)",
+
+        glass: "0 18px 60px rgba(0,0,0,0.55)",
+        goldGlow:
+          "0 18px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08), 0 0 46px rgba(244,210,122,0.12)",
       },
 
       backdropBlur: {

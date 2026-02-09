@@ -85,13 +85,14 @@ export default function AdminUsersClient() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const chips = useMemo(
-    () => [
-      { key: "all", label: "All" },
-      { key: "vip", label: "VIP" },
-      { key: "zero", label: "0 course" },
-      { key: "payment", label: "Payment issue" },
-      { key: "active7", label: "Active (7d)" },
-    ] as const,
+    () =>
+      [
+        { key: "all", label: "All" },
+        { key: "vip", label: "VIP" },
+        { key: "zero", label: "0 course" },
+        { key: "payment", label: "Payment issue" },
+        { key: "active7", label: "Active (7d)" },
+      ] as const,
     []
   );
 
@@ -488,21 +489,53 @@ function StatCard({
   );
 }
 
+/**
+ * ✅ FIX: Drawer-ийг дэлгэцэнд 100% багтаадаг болгосон.
+ * - Safe area + 100dvh
+ * - Drawer дотроо scroll (children хэсэг) зөв ажиллана
+ * - Mobile дээр full screen, desktop дээр max-w-xl хэвээр
+ */
 function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50">
-      <div onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-white/10 bg-black/70 p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-sm font-semibold text-white">{title}</div>
-          <button
-            onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10"
-          >
-            <X className="h-4 w-4" />
-          </button>
+      {/* Backdrop */}
+      <button
+        onClick={onClose}
+        aria-label="Close backdrop"
+        className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+      />
+
+      {/* ✅ Center Modal (desktop) / Fullscreen (mobile) */}
+      <div className="absolute inset-0 flex items-start justify-center p-3 md:items-center md:p-6">
+        <div
+          role="dialog"
+          aria-modal="true"
+          className={cn(
+            "w-full overflow-hidden rounded-2xl border border-white/10 bg-black/80 shadow-2xl",
+            // ✅ Mobile: fullscreen-like
+            "h-[calc(100dvh-24px)]",
+            // ✅ Desktop: big modal
+            "md:h-[min(860px,calc(100dvh-48px))] md:max-w-5xl"
+          )}
+        >
+          {/* Header (sticky) */}
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-white/10 bg-black/80 px-4 py-3">
+            <div className="text-sm font-semibold text-white">{title}</div>
+            <button
+              onClick={onClose}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Body (scroll) */}
+          <div className="h-[calc(100%-56px)] overflow-y-auto px-4 py-4">
+            {children}
+            <div className="h-6" />
+          </div>
         </div>
-        <div className="h-[calc(100%-56px)] overflow-auto pr-1">{children}</div>
       </div>
     </div>
   );

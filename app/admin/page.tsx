@@ -28,9 +28,12 @@ type Course = {
   price: number;
   oldPrice?: number;
 
-  // ✅ NEW
-  duration?: string; // "30 хоног", "1 сар", ...
-  shortDescription?: string; // card дээр гарах богино тайлбар
+  // ✅ Duration (new + legacy)
+  duration?: string; // legacy: "30 хоног", "1 сар", ...
+  durationLabel?: string; // new: UI дээр яг гаргах label
+  durationDays?: number; // new: number for expiry calc
+
+  shortDescription?: string;
   whoFor?: string[];
   learn?: string[];
 
@@ -60,8 +63,9 @@ const emptyCourseForm = {
   price: "",
   oldPrice: "",
 
-  // ✅ NEW
+  // ✅ Duration input (admin дээр)
   duration: "30 хоног",
+
   shortDescription: "",
   whoForText: "",
   learnText: "",
@@ -84,7 +88,7 @@ function isImgFile(file: File) {
   return ok.includes(file.type);
 }
 
-/** ✅ NEW: textarea-гийн мөр бүрийг list болгоно */
+/** ✅ textarea-гийн мөр бүрийг list болгоно */
 function linesToList(input: string): string[] {
   return (input || "")
     .split("\n")
@@ -93,6 +97,32 @@ function linesToList(input: string): string[] {
 }
 function listToLines(arr?: string[]) {
   return (arr || []).filter(Boolean).join("\n");
+}
+
+/** ✅ NEW: duration string -> days parse */
+function parseDurationToDays(input?: string): number | null {
+  const raw = String(input || "").trim().toLowerCase();
+  if (!raw) return null;
+
+  // "60", "60 хоног"
+  const num = raw.match(/(\d+)\s*/);
+  const n = num ? Number(num[1]) : NaN;
+
+  // "сар" => 30 өдөр гэж тооцно
+  if (raw.includes("сар")) {
+    if (Number.isFinite(n) && n > 0) return n * 30;
+    return 30;
+  }
+
+  // "хоног" / "өдөр"
+  if (raw.includes("хоног") || raw.includes("өдөр") || raw.includes("day")) {
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  // зүгээр "90" мэт
+  if (Number.isFinite(n) && n > 0) return n;
+
+  return null;
 }
 
 /** ✅ NEW: image-г 16:9 болгож center-crop + resize (1280x720) хийнэ */
@@ -150,11 +180,7 @@ async function fileTo16x9Blob(
   } catch {}
 
   const blob: Blob = await new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
-      type,
-      quality
-    );
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), type, quality);
   });
 
   return blob;
@@ -181,9 +207,7 @@ export default function AdminPage() {
   const [courseThumbFile, setCourseThumbFile] = useState<File | null>(null);
   const [courseThumbUploading, setCourseThumbUploading] = useState(false);
   const [courseThumbPct, setCourseThumbPct] = useState(0);
-  const courseThumbPreview = courseThumbFile
-    ? URL.createObjectURL(courseThumbFile)
-    : null;
+  const courseThumbPreview = courseThumbFile ? URL.createObjectURL(courseThumbFile) : null;
 
   /** =========================
    * Free lessons state
@@ -286,11 +310,7 @@ export default function AdminPage() {
   /** =========================
    * Helper: upload image to Storage (for FREE)
    * ========================= */
-  const uploadImageToStorage = async (
-    path: string,
-    file: Blob | File,
-    onPct?: (p: number) => void
-  ) => {
+  const uploadImageToStorage = async (path: string, file: Blob | File, onPct?: (p: number) => void) => {
     const storageRef = ref(storage, path);
     const task = uploadBytesResumable(storageRef, file as any);
 
@@ -328,13 +348,16 @@ export default function AdminPage() {
 
   const editCourse = (c: Course) => {
     setEditingCourseId(c.id);
+
+    // ✅ duration харуулахдаа хамгийн түрүүнд label -> duration -> fallback
+    const durationUi = (c.durationLabel ?? c.duration ?? "30 хоног").trim();
+
     setCourseForm({
       title: c.title ?? "",
       price: c.price ?? "",
       oldPrice: c.oldPrice ?? "",
 
-      // ✅ NEW
-      duration: c.duration ?? "30 хоног",
+      duration: durationUi,
       shortDescription: c.shortDescription ?? "",
       whoForText: listToLines(c.whoFor),
       learnText: listToLines(c.learn),
@@ -363,7 +386,7 @@ export default function AdminPage() {
     }
   };
 
-  /** ✅ NEW: Course thumbnail upload (16:9 болгож, нэг path дээр хадгална) */
+  /** ✅ Course thumbnail upload (16:9 болгож, нэг path дээр хадгална) */
   const uploadThumbnailForCourse = async (courseId: string) => {
     if (!courseThumbFile) return alert("Thumbnail файл сонго!");
     if (!isImgFile(courseThumbFile)) return alert("Зөвхөн JPG/PNG/WEBP зөвшөөрнө.");
@@ -430,15 +453,16 @@ export default function AdminPage() {
     if (!Number.isFinite(priceNum)) return alert("Price тоо байх ёстой!");
 
     const oldPriceNum =
-      courseForm.oldPrice === "" || courseForm.oldPrice == null
-        ? undefined
-        : Number(courseForm.oldPrice);
+      courseForm.oldPrice === "" || courseForm.oldPrice == null ? undefined : Number(courseForm.oldPrice);
 
     if (oldPriceNum !== undefined && !Number.isFinite(oldPriceNum)) {
       return alert("Old price буруу байна!");
     }
 
-    const duration = (courseForm.duration || "").trim();
+    // ✅ duration -> label + days
+    const durationLabel = (courseForm.duration || "").trim();
+    const durationDays = parseDurationToDays(durationLabel);
+
     const shortDescription = (courseForm.shortDescription || "").trim();
     const whoFor = linesToList(courseForm.whoForText || "");
     const learn = linesToList(courseForm.learnText || "");
@@ -450,8 +474,11 @@ export default function AdminPage() {
         price: priceNum,
         ...(oldPriceNum !== undefined ? { oldPrice: oldPriceNum } : {}),
 
-        // ✅ NEW
-        duration: duration || null,
+        // ✅ keep legacy + add new standard fields (эвдэхгүй)
+        duration: durationLabel || null,
+        durationLabel: durationLabel || null,
+        ...(durationDays && durationDays > 0 ? { durationDays } : {}),
+
         shortDescription: shortDescription || null,
         whoFor: whoFor.length ? whoFor : null,
         learn: learn.length ? learn : null,
@@ -577,8 +604,7 @@ export default function AdminPage() {
 
   const uploadMp4ToFree = async () => {
     if (!selectedFile) return alert("MP4 файл сонго!");
-    if (!editingFreeId)
-      return alert("Эхлээд Free lesson-оо Create (Free) хийж ID үүсгээд upload хийнэ.");
+    if (!editingFreeId) return alert("Эхлээд Free lesson-оо Create (Free) хийж ID үүсгээд upload хийнэ.");
 
     setUploading(true);
     setUploadPct(0);
@@ -773,9 +799,7 @@ export default function AdminPage() {
                 <label className="text-sm text-white/70">Course card дээрх богино тайлбар</label>
                 <input
                   value={courseForm.shortDescription}
-                  onChange={(e) =>
-                    setCourseForm((p: any) => ({ ...p, shortDescription: e.target.value }))
-                  }
+                  onChange={(e) => setCourseForm((p: any) => ({ ...p, shortDescription: e.target.value }))}
                   placeholder="Сургалтын 1-2 өгүүлбэртэй товч тайлбар"
                   className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
                 />
@@ -935,10 +959,10 @@ export default function AdminPage() {
 
                     <div className="mt-1 text-sm text-white/70">
                       {c.price}₮{" "}
-                      {c.oldPrice ? (
-                        <span className="line-through text-white/40">{c.oldPrice}₮</span>
+                      {c.oldPrice ? <span className="line-through text-white/40">{c.oldPrice}₮</span> : null}
+                      {(c.durationLabel || c.duration) ? (
+                        <span className="ml-2 text-white/50">• {(c.durationLabel || c.duration) as any}</span>
                       ) : null}
-                      {c.duration ? <span className="ml-2 text-white/50">• {c.duration}</span> : null}
                     </div>
 
                     {c.shortDescription ? (
@@ -1001,6 +1025,7 @@ export default function AdminPage() {
             ҮНЭГҮЙ ХИЧЭЭЛ НЭМЭХ (Home дээр “ҮНЭГҮЙ ХИЧЭЭЛҮҮД” хэсэгт шууд гарна)
           </p>
 
+          {/* (Доорх free section чинь өөрчлөгдөөгүй — яг чинийхээрээ үлдсэн) */}
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="mb-3 text-sm text-white/60">
               {editingFreeId ? (
@@ -1212,11 +1237,7 @@ export default function AdminPage() {
                     ) : null}
 
                     <div className="mt-2 text-xs text-white/60 break-all">
-                      {v.videoUrl ? (
-                        <span>videoUrl: {v.videoUrl}</span>
-                      ) : (
-                        <span className="text-white/50">video байхгүй</span>
-                      )}
+                      {v.videoUrl ? <span>videoUrl: {v.videoUrl}</span> : <span className="text-white/50">video байхгүй</span>}
                     </div>
 
                     {v.videoUrl ? (

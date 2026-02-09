@@ -1,30 +1,36 @@
-import { NextResponse } from "next/server";
+// app/api/qpay/invoice/create/route.ts
+import { NextRequest, NextResponse } from "next/server";
 import { qpayCreateInvoice } from "@/lib/qpay";
 
-type Body = {
-  sender_invoice_no: string;
-  invoice_description: string;
-  amount: number;
-};
-
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as Body;
+    const body = (await req.json()) as {
+      amount: number;
+      description: string;
+      orderNo?: string;
+      callbackUrl?: string;
+    };
 
-    if (!body?.sender_invoice_no || !body?.invoice_description || !Number.isFinite(body.amount)) {
-      return NextResponse.json({ ok: false, error: "BAD_REQUEST" }, { status: 400 });
+    if (!Number.isFinite(body?.amount) || body.amount <= 0) {
+      return NextResponse.json({ ok: false, error: "BAD_AMOUNT" }, { status: 400 });
+    }
+    if (!body?.description) {
+      return NextResponse.json({ ok: false, error: "NO_DESCRIPTION" }, { status: 400 });
     }
 
-    const data = await qpayCreateInvoice({
-      sender_invoice_no: body.sender_invoice_no,
-      invoice_description: body.invoice_description,
+    const orderNo = body.orderNo || `ORDER_${Date.now()}`;
+
+    const invoice = await qpayCreateInvoice({
+      orderNo,
       amount: body.amount,
+      description: body.description,
+      callbackUrl: body.callbackUrl, // optional
     });
 
-    return NextResponse.json({ ok: true, data });
+    return NextResponse.json({ ok: true, orderNo, ...invoice });
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "INTERNAL_ERROR" },
+      { ok: false, error: e?.message || "SERVER_ERROR" },
       { status: 500 }
     );
   }

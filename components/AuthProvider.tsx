@@ -1,34 +1,45 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, signOut, type User } from "firebase/auth";
+import {
+  onAuthStateChanged,
+  signOut,
+  type User,
+  setPersistence,
+  browserLocalPersistence,
+} from "firebase/auth";
 import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 type UserRole = "admin" | "user";
-
 type AccountStatus = "active" | "suspended";
+
+type PurchaseEntry = {
+  durationDays?: number;
+  durationLabel?: string;
+  purchasedAt?: any; // Firestore Timestamp
+  expiresAt?: any; // Firestore Timestamp
+};
 
 type UserDoc = {
   email: string;
   name: string;
   phone: string;
   purchasedCourseIds: string[];
-
-  role?: UserRole; // admin/user
+  purchases?: Record<string, PurchaseEntry>;
+  role?: UserRole;
   createdAt?: string;
 
-  // ✅ NEW (Profile UX-д хэрэгтэй)
-  avatarUrl?: string; // Firebase Storage url
-  accountStatus?: AccountStatus; // active/suspended (read-only)
-  authMethod?: "email" | "google" | "unknown"; // read-only
+  avatarUrl?: string;
+  accountStatus?: AccountStatus;
+  authMethod?: "email" | "google" | "unknown";
 };
 
 type AuthContextType = {
   user: User | null;
   userDoc: UserDoc | null;
   purchasedCourseIds: string[];
-  role: UserRole; // always "admin" | "user"
+  role: UserRole;
   loading: boolean;
   logout: () => Promise<void>;
 };
@@ -36,7 +47,6 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 function detectAuthMethod(u: User): "email" | "google" | "unknown" {
-  // providerData дээрээс уншина
   const providers = (u.providerData || []).map((p) => p.providerId);
   if (providers.includes("google.com")) return "google";
   if (providers.includes("password")) return "email";
@@ -54,17 +64,17 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
     const method = detectAuthMethod(u);
 
-    // ✅ new user doc
     if (!snap.exists()) {
       const newDoc: UserDoc = {
         email: u.email || "",
         name: "",
         phone: "",
         purchasedCourseIds: [],
+        purchases: {},
+
         role: "user",
         createdAt: new Date().toISOString(),
 
-        // ✅ defaults
         avatarUrl: "",
         accountStatus: "active",
         authMethod: method,
@@ -73,30 +83,26 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       return;
     }
 
-    // ✅ existing user: missing fields?
     const data = snap.data() || {};
 
     if (!("purchasedCourseIds" in data)) {
       await setDoc(ref, { purchasedCourseIds: [] }, { merge: true });
     }
-
+    if (!("purchases" in data)) {
+      await setDoc(ref, { purchases: {} }, { merge: true });
+    }
     if (!("role" in data)) {
       await setDoc(ref, { role: "user" }, { merge: true });
     }
-
     if (!("createdAt" in data)) {
       await setDoc(ref, { createdAt: new Date().toISOString() }, { merge: true });
     }
-
-    // ✅ NEW fields
     if (!("avatarUrl" in data)) {
       await setDoc(ref, { avatarUrl: "" }, { merge: true });
     }
-
     if (!("accountStatus" in data)) {
       await setDoc(ref, { accountStatus: "active" }, { merge: true });
     }
-
     if (!("authMethod" in data)) {
       await setDoc(ref, { authMethod: method }, { merge: true });
     }
@@ -105,76 +111,108 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     let unsubUserDoc: (() => void) | null = null;
 
-    const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      // өмнөх listener цэвэрлэх
-      if (unsubUserDoc) {
-        unsubUserDoc();
-        unsubUserDoc = null;
-      }
-
-      setUser(u ?? null);
-
-      if (!u) {
-        setUserDoc(null);
-        setLoading(false);
-        return;
-      }
-
+    const init = async () => {
       try {
-        setLoading(true);
+        // ✅ MOBILE-д хамгийн чухал: auth хадгалалтыг LOCAL болгоно
+        await setPersistence(auth, browserLocalPersistence);
+      } catch (e) {
+        // зарим browser дээр persistence fail байж болно → тэгсэн ч үргэлжлүүлнэ
+        console.warn("setPersistence failed:", e);
+      }
 
-        await ensureUserDoc(u);
+      const unsubAuth = onAuthStateChanged(auth, async (u) => {
+        if (unsubUserDoc) {
+          unsubUserDoc();
+          unsubUserDoc = null;
+        }
 
-        const ref = doc(db, "users", u.uid);
+        setUser(u ?? null);
 
-        unsubUserDoc = onSnapshot(
-          ref,
-          (snap) => {
-            if (!snap.exists()) {
+        if (!u) {
+          setUserDoc(null);
+          setLoading(false);
+          return;
+        }
+
+        try {
+          setLoading(true);
+
+          await ensureUserDoc(u);
+
+          const ref = doc(db, "users", u.uid);
+
+          unsubUserDoc = onSnapshot(
+            ref,
+            (snap) => {
+              if (!snap.exists()) {
+                setUserDoc(null);
+                setLoading(false);
+                return;
+              }
+
+              const d = snap.data() as any;
+
+              setUserDoc({
+                email: d.email ?? (u.email || ""),
+                name: d.name ?? "",
+                phone: d.phone ?? "",
+                purchasedCourseIds: Array.isArray(d.purchasedCourseIds)
+                  ? d.purchasedCourseIds
+                  : [],
+                purchases: d.purchases ?? {},
+                role: d.role === "admin" ? "admin" : "user",
+                createdAt: d.createdAt,
+
+                avatarUrl: d.avatarUrl ?? "",
+                accountStatus: d.accountStatus === "suspended" ? "suspended" : "active",
+                authMethod:
+                  d.authMethod === "google"
+                    ? "google"
+                    : d.authMethod === "email"
+                    ? "email"
+                    : "unknown",
+              });
+
+              setLoading(false);
+            },
+            (err) => {
+              console.error("onSnapshot userDoc error:", err);
               setUserDoc(null);
               setLoading(false);
-              return;
             }
+          );
+        } catch (err) {
+          console.error("AuthProvider ensureUserDoc error:", err);
+          setUserDoc(null);
+          setLoading(false);
+        }
+      });
 
-            const d = snap.data() as any;
+      return () => {
+        unsubAuth();
+        if (unsubUserDoc) unsubUserDoc();
+      };
+    };
 
-            setUserDoc({
-              email: d.email ?? (u.email || ""),
-              name: d.name ?? "",
-              phone: d.phone ?? "",
-              purchasedCourseIds: Array.isArray(d.purchasedCourseIds) ? d.purchasedCourseIds : [],
-              role: d.role === "admin" ? "admin" : "user",
-              createdAt: d.createdAt,
-
-              avatarUrl: d.avatarUrl ?? "",
-              accountStatus: d.accountStatus === "suspended" ? "suspended" : "active",
-              authMethod:
-                d.authMethod === "google" ? "google" : d.authMethod === "email" ? "email" : "unknown",
-            });
-
-            setLoading(false);
-          },
-          (err) => {
-            console.error("onSnapshot userDoc error:", err);
-            setUserDoc(null);
-            setLoading(false);
-          }
-        );
-      } catch (err) {
-        console.error("AuthProvider ensureUserDoc error:", err);
-        setUserDoc(null);
-        setLoading(false);
-      }
+    let cleanup: null | (() => void) = null;
+    init().then((fn) => {
+      cleanup = fn ?? null;
     });
 
     return () => {
-      unsubAuth();
-      if (unsubUserDoc) unsubUserDoc();
+      if (cleanup) cleanup();
     };
   }, []);
 
   const logout = async () => {
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } finally {
+      // ✅ UI дээр шууд гараад харагдуулахын тулд state цэвэрлэнэ
+      setUser(null);
+      setUserDoc(null);
+      setLoading(false);
+    }
   };
 
   const purchasedCourseIds = userDoc?.purchasedCourseIds ?? [];

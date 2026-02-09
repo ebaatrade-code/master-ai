@@ -1,8 +1,10 @@
 // app/api/admin/users/[uid]/notify/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { requireAdminFromRequest } from "@/lib/admin/requireAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+
+export const runtime = "nodejs";
 
 type Body = {
   title: string;
@@ -11,21 +13,44 @@ type Body = {
   type?: string; // "info" | "warning" | "grant" | etc
 };
 
-export async function POST(req: Request, ctx: { params: { uid: string } }) {
+// ✅ Next.js (таны Next 15/16) дээр params нь Promise байдаг тул ингэж бичнэ
+export async function POST(
+  req: NextRequest,
+  ctx: { params: Promise<{ uid: string }> }
+) {
   const gate = await requireAdminFromRequest(req);
-  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
+  if (!gate.ok) {
+    return NextResponse.json(
+      { ok: false, error: gate.error },
+      { status: gate.status }
+    );
+  }
 
-  const targetUid = ctx.params.uid;
-  const body = (await req.json()) as Body;
+  // ✅ params-г await заавал
+  const { uid: targetUid } = await ctx.params;
+
+  const raw = await req.json().catch(() => ({}));
+  const body = raw as Partial<Body>;
 
   const title = String(body?.title || "").trim();
   const msg = String(body?.body || "").trim();
-  const link = body?.link ? String(body.link) : "/my-content";
-  const type = body?.type ? String(body.type) : "info";
+  const link = String(body?.link || "").trim() || "/my-content";
+  const type = String(body?.type || "").trim() || "info";
 
-  if (!title || !msg) return NextResponse.json({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
+  if (!title || !msg) {
+    return NextResponse.json(
+      { ok: false, error: "MISSING_FIELDS" },
+      { status: 400 }
+    );
+  }
 
-  const notifRef = adminDb().collection("notifications").doc(targetUid).collection("items").doc();
+  const db = adminDb();
+  const notifRef = db
+    .collection("notifications")
+    .doc(targetUid)
+    .collection("items")
+    .doc();
+
   await notifRef.set({
     title,
     body: msg,

@@ -154,19 +154,43 @@ export default function TopBanner() {
 
   return (
     <div className={`${barClass} relative z-40`}>
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2">
-        {/* Left: badge + text */}
-        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-          <span className="shrink-0 rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-bold tracking-wide">
+      <div className="mx-auto flex max-w-7xl items-start sm:items-center justify-between gap-3 px-4 py-3">
+       {/* Left: badge + text */}
+<div
+  className="
+    flex min-w-0 flex-col gap-1
+    text-[13px] leading-snug font-semibold
+    sm:flex-row sm:items-center sm:gap-2 sm:text-sm
+  "
+>
+        <span
+  className="
+    w-fit shrink-0 rounded-full
+    bg-white/20 px-2 py-0.5
+    text-[10px] font-bold tracking-wide
+    sm:text-[11px]
+  "
+>
             LIMITED OFFER
           </span>
 
           {href ? (
-            <Link href={href} className="min-w-0 truncate hover:underline underline-offset-4">
+           <Link
+  href={href}
+  className="
+    min-w-0
+    whitespace-normal break-words
+    leading-snug
+    sm:truncate sm:whitespace-nowrap
+    hover:underline underline-offset-4
+  "
+>
               {text}
             </Link>
           ) : (
-            <span className="min-w-0 truncate">{text}</span>
+            <span className="min-w-0 whitespace-normal break-words sm:truncate sm:whitespace-nowrap">
+              {text}
+            </span>
           )}
         </div>
 

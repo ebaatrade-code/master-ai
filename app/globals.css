@@ -3,76 +3,58 @@
 @import "tailwindcss";
 
 /* ================================
-   OKTA NEUE — GLOBAL FONT SYSTEM
+   GLOBAL FONT (Mulish)
 ================================ */
-@font-face {
-  font-family: "Okta Neue";
-  src: url("/fonts/okta-neue-regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
+:root {
+  --font-main: var(--font-main), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 
-@font-face {
-  font-family: "Okta Neue";
-  src: url("/fonts/okta-neue-medium.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Okta Neue";
-  src: url("/fonts/okta-neue-semibold.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
-/* Fallback */
-@font-face {
-  font-family: "Okta Neue Fallback";
-  src: local("Arial");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
 }
 
 /* ================================
-   GLOBAL THEME
+   MOBILE DEFAULT = WHITE THEME
+   (Desktop дээр md+ үед dark болгож override хийнэ)
 ================================ */
-:root {
-  color-scheme: dark;
 
-  --text-strong: rgba(255, 255, 255, 0.94);
-  --text-body: rgba(255, 255, 255, 0.88);
-  --text-muted: rgba(255, 255, 255, 0.70);
+/* MOBILE: цагаан суурь + хар текст */
+:root {
+  color-scheme: light;
+
+  --text-strong: rgba(0, 0, 0, 0.94);
+  --text-body: rgba(0, 0, 0, 0.86);
+  --text-muted: rgba(0, 0, 0, 0.62);
+
+  /* Brand tokens (утастай үед ч хэрэгтэй бол үлдээнэ) */
+  --bg-0: #ffffff;
+  --bg-1: rgba(255, 255, 255, 0.92);
+  --card: rgba(0, 0, 0, 0.04);
+  --card-2: rgba(0, 0, 0, 0.03);
+  --border: rgba(0, 0, 0, 0.10);
+
+  --gold: #f4d27a;
+  --gold-2: #f1c45b;
+  --gold-glow: rgba(244, 210, 122, 0.28);
+
+  --shadow-soft: 0 18px 60px rgba(0, 0, 0, 0.10);
 }
 
 html {
   height: 100%;
-  background: #0b0b0f !important;
-  font-size: 17px; /* 16 -> 17 */
+  font-size: 17px;
+  background: #ffffff !important;
 }
 
 body {
   min-height: 100%;
   margin: 0;
-  background: #0b0b0f !important;
+
+  /* ✅ MOBILE = white */
+  background: #ffffff !important;
+  background-image: none !important;
+
   color: var(--text-body) !important;
 
-  /* ✅ Global font */
-  font-family:
-    "Okta Neue",
-    "Okta Neue Fallback",
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif !important;
+  /* ✅ GLOBAL FONT (COMPUTER + MOBILE) */
+  font-family: var(--font-main) !important;
 
   font-weight: 400;
   line-height: 1.58;
@@ -81,13 +63,43 @@ body {
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
 
-  /* ✅ Global background image (if you want it on the whole site) */
-  background-image: url("/hero/hero-bg.png");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  background-attachment: fixed; /* хүсэхгүй бол устгаарай */
+/* ================================
+   DESKTOP (md+) = DARK THEME (хуучин чинь хэвээр)
+================================ */
+@media (min-width: 768px) {
+  :root {
+    color-scheme: dark;
+
+    --text-strong: rgba(255, 255, 255, 0.94);
+    --text-body: rgba(255, 255, 255, 0.88);
+    --text-muted: rgba(255, 255, 255, 0.70);
+
+    --bg-0: #07080b;
+    --bg-1: rgba(10, 10, 14, 0.86);
+    --card: rgba(12, 12, 16, 0.55);
+    --card-2: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.10);
+
+    --shadow-soft: 0 18px 60px rgba(0, 0, 0, 0.55);
+  }
+
+  html {
+    background: #0b0b0f !important;
+  }
+
+  body {
+    background: #0b0b0f !important;
+    color: var(--text-body) !important;
+
+    /* ✅ DESKTOP дээр л hero-bg ажиллана */
+    background-image: url("/hero/hero-bg.png") !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-size: cover !important;
+    background-attachment: fixed !important;
+  }
 }
 
 /* ================================
@@ -112,6 +124,8 @@ input::placeholder {
   letter-spacing: -0.004em;
 }
 
+/* ⚠️ Энэ хэсэг бүх div/span-д font-weight тулгах нь зарим UI-г “хүнд” болгодог.
+   Гэхдээ чи хүссэн тул үлдээв. */
 p,
 span,
 div,
@@ -129,7 +143,7 @@ input, textarea, select {
 }
 
 input::placeholder, textarea::placeholder {
-  color: rgba(255, 255, 255, 0.50) !important;
+  color: color-mix(in srgb, var(--text-strong) 55%, transparent) !important;
 }
 
 /* ================================
@@ -147,11 +161,126 @@ body::after {
 }
 
 /* ================================
-   Helper classes
+   UI KIT (чинийхийг хэвээр үлдээв)
 ================================ */
-.type-page-title { font-size: 32px; line-height: 1.18; font-weight: 600; color: var(--text-strong); }
-.type-section    { font-size: 24px; line-height: 1.22; font-weight: 600; color: var(--text-strong); }
-.type-card-title { font-size: 18px; line-height: 1.28; font-weight: 600; color: var(--text-strong); }
-.type-label      { font-size: 13px; font-weight: 500; color: var(--text-muted); }
-.type-body       { font-size: 14px; font-weight: 400; color: var(--text-body); }
-.type-muted      { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+
+.page-shell {
+  position: relative;
+  min-height: 100vh;
+  background: radial-gradient(1200px 700px at 50% 0%, rgba(244, 210, 122, 0.12), transparent 55%),
+              radial-gradient(900px 520px at 10% 20%, rgba(255,255,255,0.06), transparent 55%),
+              rgba(0,0,0,0.00);
+}
+
+.page-wrap { position: relative; z-index: 1; }
+
+.glass {
+  background: linear-gradient(to bottom, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.glass-inner {
+  background: rgba(0,0,0,0.12);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.soft-glow {
+  box-shadow:
+    0 18px 60px rgba(0,0,0,0.10),
+    0 0 0 1px rgba(0,0,0,0.06),
+    0 0 46px rgba(244, 210, 122, 0.10);
+}
+
+@media (min-width: 768px) {
+  .glass-inner { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.10); }
+  .soft-glow {
+    box-shadow:
+      0 18px 60px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(255,255,255,0.08),
+      0 0 46px rgba(244, 210, 122, 0.12);
+  }
+}
+
+/* Buttons */
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold), var(--gold-2));
+  color: #111;
+  border: 1px solid rgba(0,0,0,0.15);
+  box-shadow: 0 16px 40px rgba(244, 210, 122, 0.18);
+}
+.btn-gold:hover { filter: brightness(1.03); }
+.btn-gold:active { transform: translateY(1px); }
+
+.btn-ghost {
+  background: rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.12);
+  color: rgba(0,0,0,0.86);
+}
+@media (min-width: 768px) {
+  .btn-ghost {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    color: rgba(255,255,255,0.90);
+  }
+}
+
+/* VIDEO — HIDE DOWNLOAD / PiP */
+video::-webkit-media-controls-download-button { display: none !important; }
+video::-webkit-media-controls-picture-in-picture-button { display: none !important; }
+/* ================================
+   MOBILE ONLY polish (<= 767px)
+   Desktop-г огт өөрчлөхгүй
+================================ */
+@media (max-width: 767px) {
+  /* Card-уудыг цэвэрхэн цайвар болгоно */
+  .premium-card {
+    background: rgba(255, 255, 255, 0.92) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.12) !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Button mobile дээр уншихад гоё (хар текст + том хүрээ) */
+  .premium-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    display: inline-flex !important;
+    background: linear-gradient(180deg, rgba(255,138,0,0.95), rgba(255,138,0,0.80)) !important;
+    color: #111 !important;
+    box-shadow: 0 12px 30px rgba(255,138,0,0.20) !important;
+  }
+}
+/* ================================
+   MOBILE ONLY — Watch lesson page text -> BLACK
+   (desktop-г огт эвдэхгүй)
+================================ */
+@media (max-width: 767px) {
+  /* Lesson viewer хэсэгт нийт текст */
+  .lesson-viewer,
+  .lesson-viewer * {
+    color: rgba(0, 0, 0, 0.88) !important;
+  }
+
+  /* title/strong */
+  .lesson-viewer h1,
+  .lesson-viewer h2,
+  .lesson-viewer h3,
+  .lesson-viewer .title,
+  .lesson-viewer .type-page-title,
+  .lesson-viewer .type-section,
+  .lesson-viewer .type-card-title {
+    color: rgba(0, 0, 0, 0.94) !important;
+  }
+
+  /* muted текст */
+  .lesson-viewer .muted,
+  .lesson-viewer .type-muted,
+  .lesson-viewer .type-label {
+    color: rgba(0, 0, 0, 0.62) !important;
+  }
+}

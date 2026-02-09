@@ -1,3 +1,4 @@
+// components/Header.tsx
 "use client";
 
 import Link from "next/link";
@@ -36,7 +37,7 @@ function saveLang(l: Lang) {
 }
 
 /* =========================
-   Modern icons (inline SVG)
+   Icons (inline SVG)
 ========================= */
 function IconUser({ className = "" }: { className?: string }) {
   return (
@@ -50,17 +51,7 @@ function IconUser({ className = "" }: { className?: string }) {
     </svg>
   );
 }
-function IconChart({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path d="M4 20V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M4 20h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M8 16v-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M12 16v-9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M16 16v-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
+
 function IconSettings({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -78,6 +69,7 @@ function IconSettings({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
 function IconLogout({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -98,6 +90,7 @@ function IconLogout({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
 function IconGlobe({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -116,6 +109,7 @@ function IconGlobe({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
 function IconSun({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -135,6 +129,7 @@ function IconSun({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
 function IconMoon({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -148,92 +143,33 @@ function IconMoon({ className = "" }: { className?: string }) {
   );
 }
 
-/* =========================
-   Admin Dropdown (solid black)
-========================= */
-function AdminDropdown() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
+function IconReceipt({ className = "" }: { className?: string }) {
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="rounded-full px-3 py-2 hover:bg-white/10"
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        ADMIN
-      </button>
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M7 3h10a2 2 0 0 1 2 2v16l-2-1-2 1-2-1-2 1-2-1-2 1-2-1-2 1V5a2 2 0 0 1 2-2Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M9 8h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M9 12h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
 
-      {open && (
-        <div
-          className="absolute left-0 mt-2 w-44 overflow-hidden rounded-2xl border border-white/15 bg-black shadow-2xl z-[999]"
-          role="menu"
-        >
-          <Link
-            href="/admin"
-            onClick={() => setOpen(false)}
-            className="block px-4 py-2 text-sm text-white/85 hover:bg-white/10 hover:text-white transition"
-            role="menuitem"
-          >
-            ADMIN
-          </Link>
-
-          <Link
-            href="/analist"
-            onClick={() => setOpen(false)}
-            className="block px-4 py-2 text-sm text-white/85 hover:bg-white/10 hover:text-white transition"
-            role="menuitem"
-          >
-            ANALIST
-          </Link>
-
-          <Link
-            href="/admin/banner"
-            onClick={() => setOpen(false)}
-            className="block px-4 py-2 text-sm text-white/85 hover:bg-white/10 hover:text-white transition"
-            role="menuitem"
-          >
-            BANNER
-          </Link>
-
-              <div className="h-px bg-white/12 mx-3 my-1" />
-
-          <Link
-            href="/admin/users"
-            onClick={() => setOpen(false)}
-            className="block px-4 py-2 text-sm text-white/85 hover:bg-white/10 hover:text-white transition"
-            role="menuitem"
-          >
-            USERS
-          </Link>
-        </div>
-      )}
-    </div>
+function IconHamburger({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M4 12h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
 
 /* =========================
-   Profile Dropdown (bigger + clean + solid black + stroke)
+   Profile Dropdown (desktop)
 ========================= */
 function ProfileDropdown({
   email,
@@ -302,7 +238,6 @@ function ProfileDropdown({
     saveLang(next);
   };
 
-  // ✅ bigger, cleaner
   const iconBox =
     "grid h-10 w-10 place-items-center rounded-2xl bg-white/5 ring-1 ring-white/12 group-hover:bg-white/10 group-hover:ring-white/25 transition";
   const itemRow =
@@ -310,29 +245,35 @@ function ProfileDropdown({
 
   return (
     <div ref={ref} className="relative">
-      {/* button */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex items-center gap-2 rounded-full bg-white/10 px-3 py-2 hover:bg-white/15",
-          "ring-1 ring-white/15"
+          "flex items-center gap-2 rounded-full px-3 py-2 ring-1",
+          "bg-black/5 text-black hover:bg-black/10 ring-black/10",
+          "md:bg-white/10 md:text-white md:hover:bg-white/15 md:ring-white/15"
         )}
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span className="relative h-8 w-8 overflow-hidden rounded-full ring-1 ring-white/15 bg-white/10">
+        <span
+          className={cn(
+            "relative h-8 w-8 overflow-hidden rounded-full ring-1",
+            "ring-black/10 bg-black/5",
+            "md:ring-white/15 md:bg-white/10"
+          )}
+        >
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
           ) : (
-            <span className="grid h-full w-full place-items-center text-xs font-extrabold text-white/95">
+            <span className={cn("grid h-full w-full place-items-center text-xs font-extrabold", "text-black/90 md:text-white/95")}>
               {initials}
             </span>
           )}
         </span>
 
-        <span className="hidden sm:block max-w-[150px] truncate text-white/90 font-semibold">
+        <span className="hidden sm:block max-w-[150px] truncate font-semibold text-black/90 md:text-white/90">
           {displayName?.trim() ? displayName : "PROFILE"}
         </span>
       </button>
@@ -340,16 +281,12 @@ function ProfileDropdown({
       {open && (
         <div
           className={cn(
-            // ✅ bigger width + solid black
             "absolute right-0 mt-3 w-80 overflow-hidden rounded-3xl bg-black",
-            // ✅ clean stroke + depth
             "border border-white/18 ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.75)] z-[999]",
-            // ✅ subtle pro highlight
             "before:absolute before:inset-0 before:pointer-events-none before:bg-gradient-to-b before:from-white/10 before:to-transparent before:opacity-60"
           )}
           role="menu"
         >
-          {/* Top info */}
           <div className="relative px-5 pt-5 pb-4 border-b border-white/12">
             <div className="flex items-center gap-4">
               <span className="relative h-12 w-12 overflow-hidden rounded-3xl bg-white/10 ring-1 ring-white/15">
@@ -372,19 +309,23 @@ function ProfileDropdown({
             </div>
           </div>
 
-          {/* Menu items */}
           <Link href="/profile" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
             <span className={iconBox}>
               <IconUser className="h-5 w-5 text-white/90" />
             </span>
-            Ерөнхий мэдээлэл
+            Профайл
           </Link>
 
-          <Link href="/progress" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
+          <Link
+            href="/profile/purchases"
+            onClick={() => setOpen(false)}
+            className={itemRow}
+            role="menuitem"
+          >
             <span className={iconBox}>
-              <IconChart className="h-5 w-5 text-white/90" />
+              <IconReceipt className="h-5 w-5 text-white/90" />
             </span>
-            Ахиц / Progress
+            Худалдан авалтын түүх
           </Link>
 
           <Link href="/settings" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
@@ -408,7 +349,6 @@ function ProfileDropdown({
             Гарах
           </button>
 
-          {/* ✅ Language + Theme : FULL width, 2 rows (not cramped) */}
           <div className="relative border-t border-white/12 px-5 py-4">
             <div className="grid gap-2">
               <button
@@ -419,7 +359,6 @@ function ProfileDropdown({
                   "bg-white/6 hover:bg-white/10 transition",
                   "ring-1 ring-white/12 hover:ring-white/25"
                 )}
-                aria-label="Language"
               >
                 <span className="flex items-center gap-3 text-[14px] font-semibold text-white/90">
                   <IconGlobe className="h-5 w-5 text-white/90" />
@@ -438,7 +377,6 @@ function ProfileDropdown({
                   "bg-white/6 hover:bg-white/10 transition",
                   "ring-1 ring-white/12 hover:ring-white/25"
                 )}
-                aria-label="Theme"
               >
                 <span className="flex items-center gap-3 text-[14px] font-semibold text-white/90">
                   {theme === "dark" ? (
@@ -464,6 +402,130 @@ function ProfileDropdown({
   );
 }
 
+/* =========================
+   Mobile Drawer Menu
+========================= */
+function MobileMenu({
+  open,
+  onClose,
+  isAuthed,
+  onLogout,
+  goLogin,
+}: {
+  open: boolean;
+  onClose: () => void;
+  isAuthed: boolean;
+  onLogout: () => Promise<void> | void;
+  goLogin: () => void;
+}) {
+  const router = useRouter();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const go = (href: string) => {
+    onClose();
+    router.push(href);
+  };
+
+  if (!open) return null;
+
+  const item =
+    "w-full flex items-center justify-between rounded-2xl border border-black/10 bg-black/[0.02] px-4 py-3 text-[15px] font-medium text-black hover:bg-black/[0.04] active:scale-[0.99] transition";
+  const right = "text-black/35";
+
+  return (
+    <div className="fixed inset-0 z-[9999] md:hidden">
+      {/* overlay */}
+      <button
+        aria-label="Close menu overlay"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+      />
+
+      {/* panel */}
+      <div className="absolute left-0 top-0 h-full w-[86vw] max-w-[360px] bg-white shadow-2xl">
+        <div className="flex items-center justify-between px-4 h-14 border-b border-black/10">
+          <div className="text-[13px] tracking-widest text-black/60">MENU</div>
+          <button
+            onClick={onClose}
+            className="h-9 w-9 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="px-4 py-4 space-y-3">
+          <button onClick={() => go("/contents")} className={item}>
+            <span>Сургалтууд</span>
+            <span className={right}>›</span>
+          </button>
+
+          <button onClick={() => go("/my-content")} className={item}>
+            <span>Миний сургалтууд</span>
+            <span className={right}>›</span>
+          </button>
+
+          {/* ✅ Чиний хүссэн: энэ 2-ын ДОРОО нэмэгдэнэ */}
+          {isAuthed && (
+            <button onClick={() => go("/profile/purchases")} className={item}>
+              <span>Худалдан авалтын түүх</span>
+              <span className={right}>›</span>
+            </button>
+          )}
+
+          {isAuthed && (
+            <button onClick={() => go("/profile")} className={item}>
+              <span>Профайл</span>
+              <span className={right}>›</span>
+            </button>
+          )}
+
+          {isAuthed && (
+            <button onClick={() => go("/settings")} className={item}>
+              <span>Тохиргоо</span>
+              <span className={right}>›</span>
+            </button>
+          )}
+
+          <div className="pt-2 border-t border-black/10" />
+
+          {!isAuthed ? (
+            <button
+              onClick={() => {
+                onClose();
+                goLogin();
+              }}
+              className="w-full rounded-2xl bg-black text-white py-3 text-[15px] font-semibold active:scale-[0.99]"
+            >
+              Нэвтрэх
+            </button>
+          ) : (
+            <button
+              onClick={async () => {
+                onClose();
+                await onLogout();
+              }}
+              className="w-full rounded-2xl border border-black/10 bg-white py-3 text-[15px] font-semibold text-red-600 active:scale-[0.99]"
+            >
+              Гарах
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+   Header (Desktop + Mobile)
+========================= */
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
@@ -476,8 +538,8 @@ export default function Header() {
 
   const currentUrl = useMemo(() => `${pathname || "/"}${qs}`, [pathname, qs]);
 
-  const goLogin = (callbackUrl: string) => {
-    router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+  const goLogin = () => {
+    router.push(`/login?callbackUrl=${encodeURIComponent(currentUrl)}`);
   };
 
   const onLogout = async () => {
@@ -487,62 +549,87 @@ export default function Header() {
 
   const isAdmin = role === "admin";
 
+  // ✅ mobile drawer state
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-black/70 backdrop-blur">
+    <header
+      className={cn(
+        "sticky top-0 z-50 backdrop-blur",
+        "border-b border-black/10 bg-white text-black",
+        "md:border-white/10 md:bg-black/70 md:text-white"
+      )}
+    >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-       <Link
-  href="/"
-  className="
-    group flex items-center gap-3
-    select-none
-  "
->
-  {/* EBACREATOR text */}
-  <span
-    className="
-      text-sm font-semibold tracking-wide
-      text-orange-400
-      transition-colors duration-200
-      group-hover:text-orange-300
-    "
-  >
-    EBACREATOR
-  </span>
+        {/* LEFT: mobile hamburger + brand */}
+        <div className="flex items-center gap-2">
+          {/* ✅ Mobile hamburger */}
+          <button
+            className="md:hidden h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Open menu"
+          >
+            <IconHamburger className="h-5 w-5 text-black" />
+          </button>
 
-  {/* thin line */}
-  <span
-    className="
-      h-px w-10
-      bg-white/30
-      transition-colors duration-200
-      group-hover:bg-orange-400/60
-    "
-  />
-</Link>
+          <Link href="/" className="group flex items-center gap-3 select-none">
+            <span
+              className="
+                text-sm font-semibold tracking-wide
+                text-orange-500
+                transition-colors duration-200
+                group-hover:text-orange-400
+                md:text-orange-400 md:group-hover:text-orange-300
+              "
+            >
+              EBACREATOR
+            </span>
 
-        
+            <span
+              className="
+                hidden sm:block
+                h-px w-10
+                bg-black/25
+                transition-colors duration-200
+                group-hover:bg-orange-500/60
+                md:bg-white/30 md:group-hover:bg-orange-400/60
+              "
+            />
+          </Link>
+        </div>
 
-        <nav className="flex items-center gap-2 text-sm">
-          <Link className="rounded-full px-3 py-2 hover:bg-white/10" href="/contents">
+        {/* RIGHT: desktop nav */}
+        <nav className="hidden md:flex items-center gap-2 text-sm">
+          <Link className="rounded-full px-3 py-2 hover:bg-black/5 md:hover:bg-white/10" href="/contents">
             СУРГАЛТУУД
           </Link>
 
           {!loading && !user ? (
-            <button onClick={() => goLogin("/my-content")} className="rounded-full px-3 py-2 hover:bg-white/10">
+            <button
+              onClick={() => router.push(`/login?callbackUrl=${encodeURIComponent("/my-content")}`)}
+              className="rounded-full px-3 py-2 hover:bg-black/5 md:hover:bg-white/10"
+            >
               МИНИЙ СУРГАЛТУУД
             </button>
           ) : (
-            <Link className="rounded-full px-3 py-2 hover:bg-white/10" href="/my-content">
+            <Link className="rounded-full px-3 py-2 hover:bg-black/5 md:hover:bg-white/10" href="/my-content">
               МИНИЙ СУРГАЛТУУД
             </Link>
           )}
 
-          {!loading && user && isAdmin && <AdminDropdown />}
+          {!loading && user && isAdmin && (
+            <Link className="rounded-full px-3 py-2 hover:bg-black/5 md:hover:bg-white/10" href="/admin">
+              ADMIN
+            </Link>
+          )}
 
-          {loading && <div className="ml-2 h-9 w-24 rounded-full bg-white/10 animate-pulse" />}
+          {loading && <div className="ml-2 h-9 w-24 rounded-full bg-black/5 animate-pulse md:bg-white/10" />}
 
           {!loading && !user && (
-            <button onClick={() => goLogin(currentUrl)} className="rounded-full bg-white/10 px-3 py-2 hover:bg-white/15">
+            <button
+              onClick={goLogin}
+              className="rounded-full bg-black/5 px-3 py-2 hover:bg-black/10 md:bg-white/10 md:hover:bg-white/15"
+            >
               НЭВТРЭХ
             </button>
           )}
@@ -552,13 +639,33 @@ export default function Header() {
               <ProfileDropdown
                 email={user.email || ""}
                 displayName={userDoc?.name || ""}
-                avatarUrl={userDoc?.avatarUrl || ""}
+                avatarUrl={(userDoc as any)?.avatarUrl || ""}
                 onLogout={onLogout}
               />
             </div>
           )}
         </nav>
+
+        {/* RIGHT: mobile profile icon (optional) */}
+        <div className="md:hidden flex items-center gap-2">
+          <button
+            onClick={() => (user ? router.push("/profile") : goLogin())}
+            className="h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
+            aria-label="Profile"
+          >
+            <IconUser className="h-5 w-5 text-black" />
+          </button>
+        </div>
       </div>
+
+      {/* ✅ Mobile drawer */}
+      <MobileMenu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        isAuthed={!!user}
+        onLogout={onLogout}
+        goLogin={goLogin}
+      />
     </header>
   );
 }

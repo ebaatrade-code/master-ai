@@ -20,7 +20,8 @@ type Course = {
   shortDescription?: string;
 };
 
-const money = (n: number) => (Number.isFinite(n) ? n.toLocaleString("mn-MN") : "0");
+const money = (n: number) =>
+  Number.isFinite(n) ? n.toLocaleString("mn-MN") : "0";
 
 type Props = {
   course: Course;
@@ -35,31 +36,33 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
   const { user } = useAuth();
 
   const priceNum = Number(course.price ?? 0);
-  const priceText = Number.isFinite(priceNum) && priceNum > 0 ? `${money(priceNum)}₮ / сар` : "";
-
-  const durationLabel = (course.durationLabel ?? "").trim();
-  const shortDescription = (course.shortDescription ?? "").trim();
+  const priceText =
+    Number.isFinite(priceNum) && priceNum > 0 ? `${money(priceNum)}₮` : "";
 
   const CardWrap: any = href ? Link : "div";
   const wrapProps = href ? { href } : {};
 
+  // ✅ MOBILE: white card + black text
+  // ✅ DESKTOP (md+): original dark premium card
   const cardBase =
-    "group block relative overflow-hidden rounded-3xl bg-black/35 backdrop-blur border-2 " +
+    "group block relative overflow-hidden rounded-3xl " +
+    "bg-white border-2 border-black/10 " +
     "transition-all duration-300 ease-out transform-gpu will-change-transform " +
-    "hover:scale-[1.02] hover:-translate-y-1";
+    "hover:scale-[1.04] hover:-translate-y-2 " +
+    "md:bg-black/35 md:backdrop-blur md:border-2";
 
   const cardPurchased =
-    "border-orange-400/70 shadow-[0_0_18px_rgba(249,115,22,0.18)] " +
-    "hover:border-orange-300/90 hover:shadow-[0_0_42px_rgba(249,115,22,0.45)]";
+    "md:border-orange-400/70 md:shadow-[0_0_18px_rgba(249,115,22,0.18)] " +
+    "md:hover:border-orange-300/90 md:hover:shadow-[0_0_42px_rgba(249,115,22,0.45)]";
 
   const cardNotPurchased =
-    "border-cyan-400/70 shadow-[0_0_18px_rgba(56,189,248,0.35)] " +
-    "hover:border-cyan-300/90 hover:shadow-[0_0_42px_rgba(56,189,248,0.75)]";
+    "md:border-cyan-400/70 md:shadow-[0_0_18px_rgba(56,189,248,0.35)] " +
+    "md:hover:border-cyan-300/90 md:hover:shadow-[0_0_42px_rgba(56,189,248,0.75)]";
 
-  // ✅ payment choice modal
+  // ✅ payment choice modal (логик өөрчлөхгүй)
   const [choiceOpen, setChoiceOpen] = useState(false);
 
-  // ✅ deeplink modal
+  // ✅ deeplink modal (логик өөрчлөхгүй)
   const [bankOpen, setBankOpen] = useState(false);
   const [payStatus, setPayStatus] = useState("");
   const [orderId, setOrderId] = useState("");
@@ -109,7 +112,9 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
       const data: any = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setPayStatus(data?.message || data?.error || "Deeplink invoice үүсгэхэд алдаа гарлаа.");
+        setPayStatus(
+          data?.message || data?.error || "Deeplink invoice үүсгэхэд алдаа гарлаа."
+        );
         return;
       }
 
@@ -118,7 +123,9 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
 
       setOrderId(newOrderId);
       setUrls(newUrls);
-      setPayStatus("Банк сонгоод төлбөрөө хийнэ үү. Төлсний дараа “Төлбөр шалгах” дарна уу.");
+      setPayStatus(
+        "Банк сонгоод төлбөрөө хийнэ үү. Төлсний дараа “Төлбөр шалгах” дарна уу."
+      );
     } catch (e: any) {
       setPayStatus(e?.message || "Алдаа гарлаа. Дахин оролдоно уу.");
     }
@@ -162,6 +169,8 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
     }
   }
 
+  // ⚠️ UI дээр button-уудыг бүр мөсөн авч байгаа ч,
+  // логик чинь ирээдүйд хэрэгтэй тул устгахгүй (өөрчлөхгүй) үлдээж байна.
   function onBuyClick(e: any) {
     e.preventDefault();
     e.stopPropagation();
@@ -172,33 +181,37 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
 
   return (
     <>
-      <CardWrap {...wrapProps} className={`${cardBase} ${isPurchased ? cardPurchased : cardNotPurchased}`}>
+      <CardWrap
+        {...wrapProps}
+        className={`${cardBase} ${isPurchased ? cardPurchased : cardNotPurchased}`}
+      >
         {/* THUMBNAIL */}
-        <div className="relative overflow-hidden rounded-t-3xl bg-black/50">
+        <div className="relative overflow-hidden rounded-t-3xl bg-white md:bg-black/50">
           <div className="aspect-[16/9]">
             {course.thumbnailUrl ? (
               <>
+                {/* background blur */}
                 <img
                   src={course.thumbnailUrl}
                   alt=""
                   aria-hidden="true"
-                  className="absolute inset-0 h-full w-full object-cover blur-2xl scale-110 opacity-40"
+                  className="absolute inset-0 h-full w-full object-cover blur-2xl scale-110 opacity-25 md:opacity-40"
                 />
-                <div className="absolute inset-0 bg-black/55" />
+                <div className="absolute inset-0 bg-white/55 md:bg-black/55" />
 
                 <div
                   className={`pointer-events-none absolute inset-0 z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100 ${
                     isPurchased
-                      ? "bg-[radial-gradient(circle_at_30%_20%,rgba(249,115,22,0.50),transparent_55%),radial-gradient(circle_at_70%_80%,rgba(249,115,22,0.25),transparent_60%)]"
-                      : "bg-[radial-gradient(circle_at_30%_20%,rgba(56,189,248,0.55),transparent_55%),radial-gradient(circle_at_70%_80%,rgba(56,189,248,0.25),transparent_60%)]"
+                      ? "md:bg-[radial-gradient(circle_at_30%_20%,rgba(249,115,22,0.50),transparent_55%),radial-gradient(circle_at_70%_80%,rgba(249,115,22,0.25),transparent_60%)]"
+                      : "md:bg-[radial-gradient(circle_at_30%_20%,rgba(56,189,248,0.55),transparent_55%),radial-gradient(circle_at_70%_80%,rgba(56,189,248,0.25),transparent_60%)]"
                   }`}
                 />
 
                 <div
                   className={`pointer-events-none absolute -inset-8 z-10 opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-100 ${
                     isPurchased
-                      ? "bg-[radial-gradient(circle,rgba(249,115,22,0.30),transparent_60%)]"
-                      : "bg-[radial-gradient(circle,rgba(56,189,248,0.30),transparent_60%)]"
+                      ? "md:bg-[radial-gradient(circle,rgba(249,115,22,0.30),transparent_60%)]"
+                      : "md:bg-[radial-gradient(circle,rgba(56,189,248,0.30),transparent_60%)]"
                   }`}
                 />
 
@@ -210,97 +223,62 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
                 />
               </>
             ) : (
-              <div className="grid h-full place-items-center text-white/40">
+              <div className="grid h-full place-items-center text-black/50 md:text-white/40">
                 <span className="text-sm">Thumbnail байхгүй</span>
               </div>
             )}
           </div>
-
-          {durationLabel ? (
-            <div className="absolute left-3 top-3 z-30 rounded-full border border-white/10 bg-black/60 px-3 py-1 text-[11px] font-semibold text-white/80">
-              {durationLabel}
-            </div>
-          ) : null}
         </div>
 
-        {/* BODY */}
-        <div className="p-4">
-          <div className="text-[11px] text-white/55">
-            {(course.year ?? "2025") + " • " + (course.category ?? "Онлайн сургалт")}
+        {/* BODY — ✅ зөвхөн: year, title, price, oldPrice */}
+        <div className="p-5">
+          {/* Year */}
+          <div className="text-sm font-semibold text-black/55 md:text-white/55">
+            {course.year ?? "2025"}
           </div>
 
-          <div className="mt-2 text-base font-extrabold text-white/90 line-clamp-1">{course.title}</div>
-
-          {shortDescription ? (
-            <div className="mt-2 text-sm leading-6 text-white/70 line-clamp-2">{shortDescription}</div>
-          ) : (
-            <div className="mt-2 text-sm text-white/40">(Товч тайлбар оруулаагүй)</div>
-          )}
-
-          <div className="mt-4 flex items-end justify-between gap-3">
-            {!isPurchased ? (
-              <>
-                <div>
-                  <div className="text-lg font-extrabold text-white">{priceText}</div>
-                  {course.oldPrice ? (
-                    <div className="text-xs text-white/45 line-through">{money(Number(course.oldPrice))}₮</div>
-                  ) : null}
-                </div>
-
-                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-                  🔒 Худалдаж аваагүй
-                </div>
-              </>
-            ) : (
-              <div className="text-sm text-white/70 group-hover:text-white">Худалдаж авсан ✅</div>
-            )}
+          {/* Гарчиг */}
+          <div className="mt-2 text-xl font-black leading-snug text-black/95 line-clamp-2 md:text-white/95">
+            {course.title}
           </div>
 
-          {!isPurchased ? (
-            <div
-              onClick={onBuyClick}
-              role="button"
-              className="
-                mt-4 w-full rounded-full
-                border-2 border-cyan-400/60
-                bg-gradient-to-r from-cyan-500 to-blue-600
-                px-5 py-3 text-center text-sm font-extrabold text-white
-                shadow-[0_0_18px_rgba(56,189,248,0.55)]
-                hover:shadow-[0_0_34px_rgba(56,189,248,1)]
-                hover:from-cyan-400 hover:to-blue-500
-                transition-all duration-300
-                cursor-pointer
-              "
-            >
-              АВАХ →
-            </div>
-          ) : (
-            <div
-              className="
-                mt-4 w-full rounded-full
-                border-2 border-orange-300/40
-                bg-gradient-to-r from-orange-400 to-orange-600
-                px-5 py-3 text-center text-sm font-extrabold text-black
-                shadow-[0_0_22px_rgba(251,146,60,0.85)]
-                hover:shadow-[0_0_36px_rgba(251,146,60,1)]
-                transition-all duration-300
-              "
-            >
-              ҮЗЭХ →
-            </div>
-          )}
+          {/* Үнэ + Хямдарсан үнэ */}
+          <div className="mt-4 flex items-end gap-3">
+            {priceText ? (
+              <div className="text-2xl font-extrabold text-black md:text-white">
+                {priceText}
+              </div>
+            ) : null}
+
+            {course.oldPrice ? (
+              <div
+                className="
+                  pb-[2px]
+                  text-base font-extrabold
+                  text-red-600 line-through
+                  drop-shadow-none
+                  md:text-red-400 md:drop-shadow-[0_0_6px_rgba(248,113,113,0.9)]
+                "
+              >
+                {money(Number(course.oldPrice))}₮
+              </div>
+            ) : null}
+          </div>
+
+          {/* ✅ “ХУДАЛДАЖ АВАХ / ХИЧЭЭЛ ҮЗЭХ” хэсгийг бүр мөсөн арилгасан */}
         </div>
       </CardWrap>
 
-      {/* ✅ 2 сонголтын modal */}
+      {/* ✅ Доорх modal-уудыг ОГТ өөрчлөхгүй үлдээв (ирээдүйд буцааж холбоход ready) */}
       <PaymentChoiceModal
         open={choiceOpen}
         onClose={() => setChoiceOpen(false)}
         onChooseQpay={() => {
           setChoiceOpen(false);
-          // QPay QR хэсгийг дараа нь холбоно (production дээр)
           setBankOpen(true);
-          setPayStatus("QPAY QR хэсгийг дараагийн алхам дээр production дээр холбоно. Одоохондоо 'Банкны аппаар төлөх'-ийг тестлэе.");
+          setPayStatus(
+            "QPAY QR хэсгийг дараагийн алхам дээр production дээр холбоно. Одоохондоо 'Банкны аппаар төлөх'-ийг тестлэе."
+          );
         }}
         onChooseBank={() => {
           setChoiceOpen(false);
@@ -308,7 +286,6 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
         }}
       />
 
-      {/* ✅ Deeplink modal */}
       <QPayDeeplinkModal
         open={bankOpen}
         onClose={() => setBankOpen(false)}

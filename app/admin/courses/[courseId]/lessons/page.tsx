@@ -66,6 +66,36 @@ function makeUploadId() {
   return String(Date.now());
 }
 
+/** ✅ NEW: MP4 duration (seconds) авах helper (client тал) */
+function getMp4DurationSeconds(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    try {
+      const url = URL.createObjectURL(file);
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.src = url;
+
+      const cleanup = () => {
+        URL.revokeObjectURL(url);
+        video.remove();
+      };
+
+      video.onloadedmetadata = () => {
+        const d = Number.isFinite(video.duration) ? video.duration : 0;
+        cleanup();
+        resolve(Math.max(0, Math.round(d)));
+      };
+
+      video.onerror = () => {
+        cleanup();
+        reject(new Error("Failed to load video metadata"));
+      };
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
 export default function AdminLessonsPage() {
   const params = useParams();
   const courseId = (params?.courseId as string) || "";
@@ -84,6 +114,9 @@ export default function AdminLessonsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [lastUploadedPath, setLastUploadedPath] = useState<string>("");
+
+  // ✅ NEW: duration автоматаар бөглөгдсөн эсэх (UI дээр readOnly болгоход)
+  const [durationAuto, setDurationAuto] = useState(false);
 
   // ✅ хамгаалалт: admin биш бол буцаана
   useEffect(() => {
@@ -138,6 +171,7 @@ export default function AdminLessonsPage() {
     setUploading(false);
     setUploadPct(0);
     setLastUploadedPath("");
+    setDurationAuto(false); // ✅ NEW
   };
 
   const onSubmit = async () => {
@@ -209,6 +243,7 @@ export default function AdminLessonsPage() {
     setSelectedFile(null);
     setUploadPct(0);
     setLastUploadedPath("");
+    setDurationAuto(false); // ✅ NEW (Edit дархад гараар засах боломж хэвээр үлдээнэ)
   };
 
   const onDelete = async (id: string) => {
@@ -232,7 +267,9 @@ export default function AdminLessonsPage() {
   const uploadMp4ToLesson = async () => {
     if (!lessonsRef) return;
     if (!editingId) {
-      alert("Эхлээд lesson-ээ Create хийгээд, дараа нь Edit дарж байж Upload хийнэ.");
+      alert(
+        "Эхлээд lesson-ээ Create хийгээд, дараа нь Edit дарж байж Upload хийнэ."
+      );
       return;
     }
     if (!selectedFile) {
@@ -272,8 +309,14 @@ export default function AdminLessonsPage() {
 
       const url = await getDownloadURL(task.snapshot.ref);
 
+      // ✅ NEW: durationSec-ийг form дээрээс (auto-fill болсон) авч хадгална
+      const durationNum =
+        form.durationSec === "" || form.durationSec == null
+          ? undefined
+          : Number(form.durationSec);
+
       // ✅ Firestore дээр стандарт бичилт
-      await updateDoc(doc(lessonsRef, editingId), {
+      const updatePayload: any = {
         videoPath: storagePath, // backward compatible
         video: {
           storagePath,
@@ -284,7 +327,14 @@ export default function AdminLessonsPage() {
           uploadedAt: serverTimestamp(),
         },
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      // ✅ NEW: durationSec зөв тоо байвал Firestore-д бичнэ
+      if (durationNum !== undefined && Number.isFinite(durationNum)) {
+        updatePayload.durationSec = durationNum;
+      }
+
+      await updateDoc(doc(lessonsRef, editingId), updatePayload);
 
       // UI дээр form.videoPath автоматаар fill
       setForm((p) => ({ ...p, videoPath: storagePath }));
@@ -305,7 +355,7 @@ export default function AdminLessonsPage() {
   if (loading || !user) return null;
   if (role !== "admin") return null;
 
- return (
+  return (
     <div className="mx-auto max-w-5xl px-6 py-10">
       <button
         onClick={() => router.push("/admin")}
@@ -326,7 +376,9 @@ export default function AdminLessonsPage() {
             <label className="text-sm text-white/70">Lesson title</label>
             <input
               value={form.title}
-              onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, title: e.target.value }))
+              }
               className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
               placeholder="Хичээл 1 — Танилцуулга"
             />
@@ -338,7 +390,9 @@ export default function AdminLessonsPage() {
             </label>
             <input
               value={form.videoPath}
-              onChange={(e) => setForm((p) => ({ ...p, videoPath: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, videoPath: e.target.value }))
+              }
               className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
               placeholder={`videos/courses/${courseId}/lessons/<lessonId>/<uploadId>.mp4`}
             />
@@ -349,9 +403,12 @@ export default function AdminLessonsPage() {
 
           {/* UPLOAD BOX */}
           <div className="md:col-span-2 rounded-xl border border-white/10 bg-black/30 p-4">
-            <div className="text-sm font-semibold text-white/80">MP4 Upload (Storage)</div>
+            <div className="text-sm font-semibold text-white/80">
+              MP4 Upload (Storage)
+            </div>
             <div className="mt-1 text-xs text-white/50">
-              Upload хийхийн тулд <b>Edit</b> горимд (lessonId байгаа үед) ажиллана.
+              Upload хийхийн тулд <b>Edit</b> горимд (lessonId байгаа үед)
+              ажиллана.
             </div>
 
             <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center">
@@ -359,7 +416,26 @@ export default function AdminLessonsPage() {
                 type="file"
                 accept="video/mp4"
                 disabled={uploading || busy}
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0] || null;
+                  setSelectedFile(file);
+
+                  // ✅ NEW: файл сонгох үед duration автоматаар бөглөнө
+                  if (!file) {
+                    setForm((p) => ({ ...p, durationSec: "" }));
+                    setDurationAuto(false);
+                    return;
+                  }
+
+                  try {
+                    const sec = await getMp4DurationSeconds(file);
+                    setForm((p) => ({ ...p, durationSec: sec }));
+                    setDurationAuto(true);
+                  } catch {
+                    // metadata уншиж чадсангүй — гараар бичих боломж үлдээнэ
+                    setDurationAuto(false);
+                  }
+                }}
                 className="block w-full text-sm text-white/70 file:mr-4 file:rounded-xl file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-white file:hover:bg-white/15"
               />
 
@@ -375,7 +451,10 @@ export default function AdminLessonsPage() {
             {uploading && (
               <div className="mt-3">
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                  <div className="h-2 bg-white/40" style={{ width: `${uploadPct}%` }} />
+                  <div
+                    className="h-2 bg-white/40"
+                    style={{ width: `${uploadPct}%` }}
+                  />
                 </div>
               </div>
             )}
@@ -398,13 +477,23 @@ export default function AdminLessonsPage() {
           </div>
 
           <div>
-            <label className="text-sm text-white/70">Duration (sec) optional</label>
+            <label className="text-sm text-white/70">
+              Duration (sec) optional
+            </label>
             <input
               value={form.durationSec}
-              onChange={(e) => setForm((p) => ({ ...p, durationSec: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, durationSec: e.target.value }))
+              }
+              readOnly={durationAuto} // ✅ NEW: auto бөглөгдвөл гараар бичихгүй
               className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
               placeholder="600"
             />
+            {durationAuto && (
+              <div className="mt-1 text-[11px] text-white/40">
+                MP4 metadata-с автоматаар бөглөгдсөн ✅
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -412,7 +501,9 @@ export default function AdminLessonsPage() {
               id="free"
               type="checkbox"
               checked={!!form.isFreePreview}
-              onChange={(e) => setForm((p) => ({ ...p, isFreePreview: e.target.checked }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, isFreePreview: e.target.checked }))
+              }
             />
             <label htmlFor="free" className="text-sm text-white/70">
               isFreePreview (login хийсэн хүн үзнэ)
@@ -424,7 +515,9 @@ export default function AdminLessonsPage() {
               id="pub"
               type="checkbox"
               checked={!!form.isPublished}
-              onChange={(e) => setForm((p) => ({ ...p, isPublished: e.target.checked }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, isPublished: e.target.checked }))
+              }
             />
             <label htmlFor="pub" className="text-sm text-white/70">
               isPublished

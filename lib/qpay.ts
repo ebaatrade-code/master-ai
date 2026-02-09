@@ -1,31 +1,23 @@
 // lib/qpay.ts
+type TokenRes = { access_token: string };
 
-export type TokenRes = {
-  access_token: string;
-  expires_in?: number;
-  token_type?: string;
-};
-
-export type InvoiceCreateRes = {
-  invoice_id?: string;
-  qr_image?: string;
+type InvoiceCreateRes = {
+  invoice_id: string;
   qr_text?: string;
+  qr_image?: string;
   qPay_shortUrl?: string;
-  urls?: Array<{ name: string; description?: string; link: string }>;
+  urls?: Array<{ name: string; description?: string; link: string; logo?: string }>;
 };
 
-export type PaymentCheckRes = {
+type PaymentCheckRes = {
   count?: number;
   paid_amount?: number;
   rows?: Array<{
     payment_id: string;
     payment_status: "PAID" | "PENDING" | string;
-    payment_amount: number | string;
+    payment_amount: string;
     payment_currency: string;
     payment_date?: string;
-    payment_wallet?: string;
-    payment_type?: string;
-    trx_fee?: number | string;
   }>;
 };
 
@@ -35,101 +27,81 @@ function mustEnv(name: string) {
   return v;
 }
 
-const BASE_URL = () => mustEnv("QPAY_BASE_URL"); // https://merchant.qpay.mn
+const BASE_URL = () => mustEnv("QPAY_BASE_URL");
 const CLIENT_ID = () => mustEnv("QPAY_CLIENT_ID");
 const CLIENT_SECRET = () => mustEnv("QPAY_CLIENT_SECRET");
 const INVOICE_CODE = () => mustEnv("QPAY_INVOICE_CODE");
-const CALLBACK_URL = () => mustEnv("QPAY_CALLBACK_URL");
+const BRANCH_CODE = () => process.env.QPAY_BRANCH_CODE || "ONLINE";
 
-const SENDER_BRANCH_CODE = () => process.env.QPAY_SENDER_BRANCH_CODE || "ONLINE";
-const INVOICE_RECEIVER_CODE = () =>
-  process.env.QPAY_INVOICE_RECEIVER_CODE || "terminal";
+async function qpayToken() {
+  const basic = Buffer.from(`${CLIENT_ID()}:${CLIENT_SECRET()}`).toString("base64");
 
-// ✅ 1) Token авах
-export async function qpayGetToken(): Promise<TokenRes> {
-  const url = `${BASE_URL()}/v2/auth/token`;
-
-  const body = new URLSearchParams();
-  body.set("grant_type", "client_credentials");
-  body.set("client_id", CLIENT_ID());
-  body.set("client_secret", CLIENT_SECRET());
-
-  const res = await fetch(url, {
+  const res = await fetch(`${BASE_URL()}/v2/auth/token`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-    cache: "no-store",
+    headers: { Authorization: `Basic ${basic}` },
   });
 
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`QPAY token failed: ${res.status} ${t}`);
-  }
-
-  return (await res.json()) as TokenRes;
+  if (!res.ok) throw new Error(`QPAY_TOKEN_FAILED: ${res.status}`);
+  const json = (await res.json()) as TokenRes;
+  if (!json?.access_token) throw new Error("QPAY_TOKEN_NO_ACCESS_TOKEN");
+  return json.access_token;
 }
 
-// ✅ 2) Invoice үүсгэх (callback_url type асуудалгүй — env-ээс өгч байна)
-export async function qpayCreateInvoice(params: {
-  sender_invoice_no: string; // ORDER_10001 гэх мэт
-  invoice_description: string; // "Master AI сургалт" гэх мэт
-  amount: number; // 1000
+export async function qpayCreateInvoice(input: {
+  orderNo: string;
+  amount: number;
+  description: string;
+  callbackUrl?: string; // локал дээр optional
 }) {
-  const token = await qpayGetToken();
-  const url = `${BASE_URL()}/v2/invoice`;
+  const token = await qpayToken();
 
-  const payload = {
+  const body = {
     invoice_code: INVOICE_CODE(),
-    sender_invoice_no: params.sender_invoice_no,
-    invoice_receiver_code: INVOICE_RECEIVER_CODE(),
-    invoice_description: params.invoice_description,
-    sender_branch_code: SENDER_BRANCH_CODE(),
-    amount: params.amount,
-    callback_url: CALLBACK_URL(), // ✅ энд л байна
+    sender_invoice_no: input.orderNo,
+    invoice_receiver_code: "terminal",
+    invoice_description: input.description,
+    sender_branch_code: BRANCH_CODE(),
+    amount: input.amount,
+    callback_url: input.callbackUrl || "https://example.com/qpay/callback",
   };
 
-  const res = await fetch(url, {
+  const res = await fetch(`${BASE_URL()}/v2/invoice`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token.access_token}`,
       "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(payload),
-    cache: "no-store",
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`QPAY create invoice failed: ${res.status} ${t}`);
+    const t = await res.text().catch(() => "");
+    throw new Error(`QPAY_INVOICE_FAILED: ${res.status} ${t}`);
   }
 
   return (await res.json()) as InvoiceCreateRes;
 }
 
-// ✅ 3) Payment шалгах
-export async function qpayCheckPayment(paymentId: string) {
-  const token = await qpayGetToken();
-  const url = `${BASE_URL()}/v2/payment/check`;
+export async function qpayPaymentCheck(invoiceId: string) {
+  const token = await qpayToken();
 
-  const res = await fetch(url, {
+  const res = await fetch(`${BASE_URL()}/v2/payment/check`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token.access_token}`,
       "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ payment_id: paymentId }),
-    cache: "no-store",
+    body: JSON.stringify({
+      object_type: "INVOICE",
+      object_id: invoiceId,
+      offset: { page_number: 1, page_limit: 100 },
+    }),
   });
 
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`QPAY check failed: ${res.status} ${t}`);
+    const t = await res.text().catch(() => "");
+    throw new Error(`QPAY_CHECK_FAILED: ${res.status} ${t}`);
   }
 
   return (await res.json()) as PaymentCheckRes;
 }
-
-// ✅ Хуучин нэрээр дуудаж байсан route-ууд унахгүй (alias export)
-export const qpayPaymentCheck = qpayCheckPayment;

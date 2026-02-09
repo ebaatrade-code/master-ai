@@ -67,6 +67,14 @@ export default function HeroActions() {
       >
         Контентууд
       </Link>
+
+      {/* ✅ NEW: Худалдан авалтын түүх */}
+      <Link
+        href="/profile/purchases"
+        className="rounded-full bg-white/10 text-white px-5 py-2 text-sm font-semibold hover:bg-white/15"
+      >
+        Худалдан авалтын түүх
+      </Link>
     </div>
   );
 }

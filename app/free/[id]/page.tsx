@@ -160,13 +160,16 @@ export default function FreeLessonPage() {
             </div>
 
             <video
-              controls
-              className="relative z-10 h-auto w-full"
-              src={data.videoUrl}
-              poster={data.thumbnailUrl}
-              playsInline
-              preload="metadata"
-            />
+  controls
+  className="relative z-10 h-auto w-full"
+  src={data.videoUrl}
+  poster={data.thumbnailUrl}
+  playsInline
+  preload="metadata"
+  controlsList="nodownload noplaybackrate noremoteplayback"
+  disablePictureInPicture
+  onContextMenu={(e) => e.preventDefault()}
+/>
           </div>
 
           {/* FOOT NOTE */}

@@ -1,8 +1,10 @@
 // app/api/admin/users/[uid]/payment-issue/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
 import { requireAdminFromRequest } from "@/lib/admin/requireAdmin";
 import { FieldValue } from "firebase-admin/firestore";
+
+export const runtime = "nodejs";
 
 type Body = {
   status: "open" | "resolved";
@@ -10,12 +12,21 @@ type Body = {
   courseId?: string | null;
 };
 
-export async function POST(req: Request, ctx: { params: { uid: string } }) {
+export async function POST(
+  req: NextRequest,
+  ctx: { params: Promise<{ uid: string }> }
+) {
   const gate = await requireAdminFromRequest(req);
-  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
+  if (!gate.ok) {
+    return NextResponse.json(
+      { ok: false, error: gate.error },
+      { status: gate.status }
+    );
+  }
 
-  const targetUid = ctx.params.uid;
-  const body = (await req.json()) as Body;
+  const { uid: targetUid } = await ctx.params;
+
+  const body = (await req.json().catch(() => ({}))) as Partial<Body>;
 
   const status = body?.status;
   if (!status || !["open", "resolved"].includes(status)) {
@@ -25,7 +36,7 @@ export async function POST(req: Request, ctx: { params: { uid: string } }) {
   const courseId = body?.courseId ? String(body.courseId) : null;
   const reason = body?.reason ? String(body.reason) : "";
 
-  // stable doc id => easy to show dot quickly (latest is still available by ordering too)
+  // stable doc id => easy to show dot quickly
   const docId = `${targetUid}_${courseId || "general"}`;
   const ref = adminDb().collection("paymentIssues").doc(docId);
 
@@ -38,6 +49,7 @@ export async function POST(req: Request, ctx: { params: { uid: string } }) {
   };
 
   if (status === "open") {
+    // createdAt-ыг анх үүсгэх үед л тогтоох (overwrite хийхээс хамгаална)
     payload.createdAt = FieldValue.serverTimestamp();
     payload.resolvedAt = null;
   } else {

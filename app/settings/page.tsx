@@ -35,13 +35,12 @@ function getLS(key: string, fallback: string) {
   if (typeof window === "undefined") return fallback;
   return window.localStorage.getItem(key) || fallback;
 }
-
 function setLS(key: string, value: string) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(key, value);
 }
 
-// ---------- tiny icons (inline SVG) ----------
+// ---------- icons (inline SVG) ----------
 function Icon({
   name,
   className = "h-5 w-5",
@@ -56,10 +55,18 @@ function Icon({
     | "text"
     | "sun"
     | "moon"
-    | "check";
+    | "check"
+    | "copy";
   className?: string;
 }) {
-  const common = { className, fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  const common = {
+    className,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
   switch (name) {
     case "shield":
       return (
@@ -135,6 +142,13 @@ function Icon({
           <path d="M20 6L9 17l-5-5" />
         </svg>
       );
+    case "copy":
+      return (
+        <svg viewBox="0 0 24 24" {...common}>
+          <path d="M9 9h10v10H9z" />
+          <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+        </svg>
+      );
   }
 }
 
@@ -159,7 +173,7 @@ function Pill({
         "group w-full rounded-2xl border px-4 py-3 text-left transition",
         active
           ? "border-white/25 bg-white/10 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
-          : "border-white/10 bg-black/40 hover:bg-black/55 hover:border-white/15"
+          : "border-white/10 bg-black/35 hover:bg-black/55 hover:border-white/15"
       )}
     >
       <div className="flex items-center gap-3">
@@ -185,6 +199,69 @@ function Pill({
         </div>
       </div>
     </button>
+  );
+}
+
+function SectionCard({
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/40 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5">
+            {icon}
+          </div>
+          <div>
+            <div className="text-sm font-extrabold text-white">{title}</div>
+            {subtitle ? <div className="text-xs text-white/55">{subtitle}</div> : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  disabled,
+  type = "text",
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  type?: string;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <div className="mb-2 text-xs font-bold text-white/70">{label}</div>
+      <input
+        className={cn(
+          "w-full rounded-2xl border border-white/12 bg-black/55 px-4 py-3 text-sm text-white placeholder:text-white/35 outline-none focus:border-white/25 focus:bg-black/65",
+          disabled && "opacity-60 cursor-not-allowed"
+        )}
+        disabled={disabled}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        type={type}
+        placeholder={placeholder}
+      />
+    </label>
   );
 }
 
@@ -217,14 +294,17 @@ export default function SettingsPage() {
     setLS(LS_THEME, theme);
     setLS(LS_LANG, lang);
     setLS(LS_TEXT, textSize);
-    showToast("ok", "Тохиргоо хадгалагдлаа ✅");
+    showToast("ok", "Хадгалагдлаа ✅");
   };
 
   // ---- Security actions ----
   const email = useMemo(() => user?.email || userDoc?.email || "", [user?.email, userDoc?.email]);
-  const lastLoginText = useMemo(() => formatDateTime(user?.metadata?.lastSignInTime || ""), [user?.metadata?.lastSignInTime]);
+  const lastLoginText = useMemo(
+    () => formatDateTime(user?.metadata?.lastSignInTime || ""),
+    [user?.metadata?.lastSignInTime]
+  );
 
-  const canChangePassword = userDoc?.authMethod === "email"; // email/password үед
+  const canChangePassword = userDoc?.authMethod === "email";
 
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
@@ -236,7 +316,7 @@ export default function SettingsPage() {
     setResetSending(true);
     try {
       await sendPasswordResetEmail(auth, email);
-      showToast("ok", "Reset email илгээлээ ✅ (Inbox/Spam шалгаарай)");
+      showToast("ok", "Reset email илгээлээ ✅");
     } catch (e: any) {
       console.error(e);
       showToast("err", e?.message || "Reset алдаа");
@@ -248,7 +328,7 @@ export default function SettingsPage() {
   const changePassword = async () => {
     if (!canChangePassword) return showToast("info", "Google хэрэглэгчид нууц үг солих шаардлагагүй.");
     if (!user) return;
-    if (pw1.trim().length < 6) return showToast("err", "Шинэ нууц үг хамгийн багадаа 6 тэмдэгт байна.");
+    if (pw1.trim().length < 6) return showToast("err", "Нууц үг min 6 тэмдэгт.");
     if (pw1 !== pw2) return showToast("err", "Нууц үг таарахгүй байна.");
 
     setPwSaving(true);
@@ -256,12 +336,11 @@ export default function SettingsPage() {
       await updatePassword(user, pw1);
       setPw1("");
       setPw2("");
-      showToast("ok", "Нууц үг амжилттай солигдлоо ✅");
+      showToast("ok", "Нууц үг солигдлоо ✅");
     } catch (e: any) {
       console.error(e);
-      // Firebase: "auth/requires-recent-login" хамгийн түгээмэл
       if (String(e?.code || "").includes("requires-recent-login")) {
-        showToast("err", "Сүүлд нэвтэрсэн баталгаажуулалт хэрэгтэй. Reset email илгээж сольж болно.");
+        showToast("err", "Сүүлд нэвтэрсэн баталгаажуулалт хэрэгтэй. Reset email-ээр сольж болно.");
       } else {
         showToast("err", e?.message || "Нууц үг солих алдаа");
       }
@@ -270,36 +349,60 @@ export default function SettingsPage() {
     }
   };
 
-  // ---- UI classes (Profile-тэй адил цэвэрхэн) ----
-  const pageWrap = "min-h-screen bg-black text-white";
-  const container = "mx-auto max-w-5xl px-5 py-10";
-  const sectionCls = "border-t border-white/10 pt-8 mt-8";
-  const panel = "rounded-3xl border border-white/10 bg-black/75 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.55)]";
-  const panelPad = "p-6";
-  const input =
-    "w-full rounded-2xl border border-white/12 bg-black/60 px-4 py-3 text-sm text-white placeholder:text-white/40 outline-none focus:border-white/25 focus:bg-black/70";
-  const label = "text-sm font-extrabold text-white/90";
-  const hint = "text-xs text-white/55";
+  const copyEmail = async () => {
+    if (!email) return;
+    try {
+      await navigator.clipboard.writeText(email);
+      showToast("ok", "Email copy ✅");
+    } catch {
+      showToast("err", "Copy болохгүй байна");
+    }
+  };
+
+  // ---- Premium layout styles ----
+  const sectionLine = "border-t border-white/10 pt-8 mt-8";
+  const glassPanel =
+    "rounded-3xl border border-white/10 bg-black/55 backdrop-blur-xl shadow-[0_22px_90px_rgba(0,0,0,0.55)]";
+  const goldBtn =
+    "inline-flex items-center justify-center gap-2 rounded-full bg-[#f5d37b] px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60";
+  const outlineBtn =
+    "rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10";
+
+  const chip =
+    "inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/40 px-3 py-2 text-xs text-white/75";
 
   return (
-    <div className={pageWrap}>
-      <div className={container}>
-        {/* Title */}
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="min-h-screen text-white">
+      <div className="mx-auto max-w-5xl px-5 py-10">
+        {/* Header */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight">Тохиргоо</h1>
-            <p className="mt-2 text-sm text-white/60">
-              Аюулгүй байдал • Харагдац • Хэл • Хэмжээ
-            </p>
           </div>
 
-          <div className="flex gap-2">
-            <Link href="/profile" className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <div className={chip}>
+              <Icon name="clock" className="h-4 w-4" />
+              <span className="font-semibold">Сүүлд:</span>
+              <span className="text-white/90">{lastLoginText}</span>
+            </div>
+
+            <Link href="/profile" className={outlineBtn}>
               Profile
             </Link>
-            <Link href="/progress" className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10">
+
+            {/* ✅ ADDED: Progress -> /my-content (Миний сургалтууд) */}
+            <Link href="/my-content" className={outlineBtn}>
               Progress
             </Link>
+
+            <button
+              type="button"
+              onClick={savePrefs}
+              className="rounded-full bg-white px-5 py-2 text-sm font-extrabold text-black hover:opacity-90"
+            >
+              Хадгалах
+            </button>
           </div>
         </div>
 
@@ -317,191 +420,114 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* A) Account & Security */}
-        <section className={sectionCls}>
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold text-white/50">A) ACCOUNT & SECURITY (заавал)</div>
-              <div className="mt-1 text-xl font-extrabold">Аюулгүй байдал</div>
-              <div className="mt-1 text-sm text-white/60">
-                Нууц үг сэргээх, солих, сүүлд нэвтэрсэн мэдээлэл.
-              </div>
-            </div>
+        {/* Security */}
+        <section className={sectionLine}>
+          <div className="text-xl font-extrabold">Аюулгүй байдал</div>
 
-            <div className="hidden sm:flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/75">
-              <Icon name="clock" className="h-4 w-4" />
-              <span className="font-semibold">Сүүлд:</span>
-              <span className="text-white/90">{lastLoginText}</span>
-            </div>
-          </div>
-
-          <div className={cn("mt-5", panel, panelPad)}>
+          <div className={cn("mt-5 p-6", glassPanel)}>
             <div className="grid gap-5 md:grid-cols-2">
-              {/* Reset email */}
-              <div className="rounded-2xl border border-white/10 bg-black/55 p-5">
-                <div className="flex items-center gap-2">
-                  <span className="grid h-9 w-9 place-items-center rounded-2xl border border-white/10 bg-white/5">
-                    <Icon name="mail" />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-sm font-extrabold">Нууц үг сэргээх</div>
-                    <div className="text-xs text-white/60 truncate">
-                      Reset холбоос <span className="text-white/85 font-semibold">{email || "—"}</span> руу очно.
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={sendReset}
-                  disabled={resetSending || !email}
-                  className="mt-4 inline-flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-extrabold hover:bg-white/15 disabled:opacity-60"
-                >
-                  <Icon name="mail" className="h-4 w-4" />
-                  {resetSending ? "Илгээж байна..." : "Reset email илгээх"}
-                </button>
-
-                <div className="mt-3 text-xs text-white/55">
-                  Inbox дээр харагдахгүй бол Spam/Promotions-оо шалгаарай.
-                </div>
-              </div>
-
-              {/* Change password */}
-              <div className="rounded-2xl border border-white/10 bg-black/55 p-5">
-                <div className="flex items-center gap-2">
-                  <span className="grid h-9 w-9 place-items-center rounded-2xl border border-white/10 bg-white/5">
-                    <Icon name="key" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-extrabold">Нууц үг солих</div>
-                    <div className="text-xs text-white/60">
-                      {canChangePassword ? "Email/Password хэрэглэгчид" : "Google хэрэглэгчид (унтраалттай)"}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-3">
-                  <div>
-                    <div className={label}>Шинэ нууц үг</div>
-                    <input
-                      className={cn(input, !canChangePassword && "opacity-60 cursor-not-allowed")}
-                      disabled={!canChangePassword}
-                      value={pw1}
-                      onChange={(e) => setPw1(e.target.value)}
-                      placeholder="Шинэ нууц үг (min 6)"
-                      type="password"
-                    />
-                  </div>
-
-                  <div>
-                    <div className={label}>Шинэ нууц үг (дахин)</div>
-                    <input
-                      className={cn(input, !canChangePassword && "opacity-60 cursor-not-allowed")}
-                      disabled={!canChangePassword}
-                      value={pw2}
-                      onChange={(e) => setPw2(e.target.value)}
-                      placeholder="Дахин бич"
-                      type="password"
-                    />
+              {/* Reset */}
+              <SectionCard
+                icon={<Icon name="mail" className="h-5 w-5" />}
+                title="Нууц үг сэргээх"
+                subtitle="Reset холбоос илгээнэ"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/55 px-3 py-2 text-xs text-white/80">
+                    <Icon name="mail" className="h-4 w-4" />
+                    <span className="font-semibold">{email || "—"}</span>
                   </div>
 
                   <button
                     type="button"
+                    onClick={copyEmail}
+                    disabled={!email}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10 disabled:opacity-60"
+                  >
+                    <Icon name="copy" className="h-4 w-4" />
+                    Copy
+                  </button>
+                </div>
+
+                <div className="mt-4">
+                  <button type="button" onClick={sendReset} disabled={resetSending || !email} className={goldBtn}>
+                    <Icon name="mail" className="h-4 w-4" />
+                    {resetSending ? "Илгээж байна..." : "Reset email илгээх"}
+                  </button>
+                </div>
+              </SectionCard>
+
+              {/* Change password */}
+              <SectionCard
+                icon={<Icon name="key" className="h-5 w-5" />}
+                title="Нууц үг солих"
+                subtitle={canChangePassword ? "Email/Password" : "Google (унтраалттай)"}
+              >
+                <div className="grid gap-3">
+                  <Field
+                    label="Шинэ нууц үг"
+                    value={pw1}
+                    onChange={setPw1}
+                    disabled={!canChangePassword}
+                    type="password"
+                    placeholder="min 6"
+                  />
+                  <Field
+                    label="Дахин"
+                    value={pw2}
+                    onChange={setPw2}
+                    disabled={!canChangePassword}
+                    type="password"
+                    placeholder="Дахин бич"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <button
+                    type="button"
                     onClick={changePassword}
                     disabled={!canChangePassword || pwSaving}
-                    className="mt-1 inline-flex items-center justify-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60"
+                    className={cn(
+                      "w-full rounded-full bg-white py-2.5 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60"
+                    )}
                   >
-                    <Icon name="key" className="h-4 w-4" />
                     {pwSaving ? "Сольж байна..." : "Нууц үг солих"}
                   </button>
-
-                  <div className={hint}>
-                    * Заримдаа Firebase “recent login” шаардана. Тэгвэл дээрх Reset email-ээр хамгийн амархан сольдог.
-                  </div>
                 </div>
-              </div>
-            </div>
-
-            {/* last login (mobile) */}
-            <div className="mt-5 sm:hidden rounded-2xl border border-white/10 bg-black/55 p-4 text-sm text-white/80">
-              <div className="flex items-center gap-2">
-                <Icon name="clock" />
-                <span className="font-extrabold">Сүүлд нэвтэрсэн:</span>
-                <span className="text-white/90">{lastLoginText}</span>
-              </div>
+              </SectionCard>
             </div>
           </div>
         </section>
 
-        {/* B) Preferences */}
-        <section className={sectionCls}>
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="text-xs font-bold text-white/50">B) PREFERENCES (UX-д заавал)</div>
-              <div className="mt-1 text-xl font-extrabold">Харагдац & Хэл</div>
-              <div className="mt-1 text-sm text-white/60">
-                Өдөр/шөнө хамаагүй тухтай үзэх тохиргоо. (localStorage)
-              </div>
-            </div>
+        {/* Preferences */}
+        <section className={sectionLine}>
+          <div className="text-xl font-extrabold">Харагдац & Хэл</div>
 
-            <button
-              type="button"
-              onClick={savePrefs}
-              className="rounded-full bg-white px-5 py-2 text-sm font-extrabold text-black hover:opacity-90"
-            >
-              Хадгалах
-            </button>
-          </div>
-
-          <div className={cn("mt-5", panel, panelPad)}>
+          <div className={cn("mt-5 p-6", glassPanel)}>
             <div className="grid gap-4 md:grid-cols-3">
               {/* Theme */}
-              <div className="rounded-2xl border border-white/10 bg-black/55 p-5">
-                <div className="flex items-center gap-2">
-                  <span className="grid h-9 w-9 place-items-center rounded-2xl border border-white/10 bg-white/5">
-                    <Icon name="palette" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-extrabold">Theme</div>
-                    <div className="text-xs text-white/60">Dark / Light</div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-2">
+              <SectionCard icon={<Icon name="palette" className="h-5 w-5" />} title="Theme" subtitle="Dark / Light">
+                <div className="grid gap-2">
                   <Pill
                     active={theme === "dark"}
                     onClick={() => setTheme("dark")}
                     leftIcon={<Icon name="moon" />}
                     title="Dark"
-                    subtitle="Нүдэнд амар"
+                    subtitle=" "
                   />
                   <Pill
                     active={theme === "light"}
                     onClick={() => setTheme("light")}
                     leftIcon={<Icon name="sun" />}
                     title="Light"
-                    subtitle="Гэгээлэг харагдац"
+                    subtitle=" "
                   />
                 </div>
-
-                <div className="mt-3 text-xs text-white/55">
-                  * Одоогоор хадгалаад дараа нь бүх сайтад нэг дор хэрэгжүүлнэ.
-                </div>
-              </div>
+              </SectionCard>
 
               {/* Language */}
-              <div className="rounded-2xl border border-white/10 bg-black/55 p-5">
-                <div className="flex items-center gap-2">
-                  <span className="grid h-9 w-9 place-items-center rounded-2xl border border-white/10 bg-white/5">
-                    <Icon name="globe" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-extrabold">Language</div>
-                    <div className="text-xs text-white/60">MN / EN</div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-2">
+              <SectionCard icon={<Icon name="globe" className="h-5 w-5" />} title="Language" subtitle="MN / EN">
+                <div className="grid gap-2">
                   <Pill
                     active={lang === "mn"}
                     onClick={() => setLang("mn")}
@@ -517,55 +543,27 @@ export default function SettingsPage() {
                     subtitle="en-US"
                   />
                 </div>
-
-                <div className="mt-3 text-xs text-white/55">
-                  * Хүсвэл дараа нь Firestore-т sync хийж болно (optional).
-                </div>
-              </div>
+              </SectionCard>
 
               {/* Text size */}
-              <div className="rounded-2xl border border-white/10 bg-black/55 p-5">
-                <div className="flex items-center gap-2">
-                  <span className="grid h-9 w-9 place-items-center rounded-2xl border border-white/10 bg-white/5">
-                    <Icon name="text" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-extrabold">Text size</div>
-                    <div className="text-xs text-white/60">Normal / Large</div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-2">
+              <SectionCard icon={<Icon name="text" className="h-5 w-5" />} title="Text size" subtitle="Normal / Large">
+                <div className="grid gap-2">
                   <Pill
                     active={textSize === "normal"}
                     onClick={() => setTextSize("normal")}
                     leftIcon={<span className="text-sm font-extrabold">Aa</span>}
                     title="Normal"
-                    subtitle="Стандарт хэмжээ"
+                    subtitle=" "
                   />
                   <Pill
                     active={textSize === "large"}
                     onClick={() => setTextSize("large")}
                     leftIcon={<span className="text-sm font-extrabold">AA</span>}
                     title="Large"
-                    subtitle="Хараанд эвтэй"
+                    subtitle=" "
                   />
                 </div>
-
-                <div className="mt-3 text-xs text-white/55">
-                  * Accessibility-д хэрэгтэй.
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75">
-              <div className="flex items-center gap-2">
-                <Icon name="shield" className="h-4 w-4" />
-                <span className="font-extrabold">Санамж:</span>
-                <span className="text-white/80">
-                  Theme/Language/Text size тохиргоо localStorage-д хадгалагдана.
-                </span>
-              </div>
+              </SectionCard>
             </div>
           </div>
         </section>
