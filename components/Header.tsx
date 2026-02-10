@@ -55,11 +55,7 @@ function IconUser({ className = "" }: { className?: string }) {
 function IconSettings({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path
-        d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.8" />
       <path
         d="M19.4 15a7.94 7.94 0 0 0 .1-1 7.94 7.94 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8.4 8.4 0 0 0-1.7-1L15 3h-6l-.3 3a8.4 8.4 0 0 0-1.7 1l-2.4-1-2 3.5L4.6 12a7.94 7.94 0 0 0-.1 1 7.94 7.94 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8.4 8.4 0 0 0 1.7 1l.3 3h6l.3-3a8.4 8.4 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5Z"
         stroke="currentColor"
@@ -94,11 +90,7 @@ function IconLogout({ className = "" }: { className?: string }) {
 function IconGlobe({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path
-        d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
+      <path d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10Z" stroke="currentColor" strokeWidth="1.8" />
       <path d="M2 12h20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path
         d="M12 2c3 3 3 17 0 20C9 19 9 5 12 2Z"
@@ -113,11 +105,7 @@ function IconGlobe({ className = "" }: { className?: string }) {
 function IconSun({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path
-        d="M12 18a6 6 0 1 0-6-6 6 6 0 0 0 6 6Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
+      <path d="M12 18a6 6 0 1 0-6-6 6 6 0 0 0 6 6Z" stroke="currentColor" strokeWidth="1.8" />
       <path d="M12 2v2.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M12 19.5V22" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M2 12h2.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -267,7 +255,12 @@ function ProfileDropdown({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
           ) : (
-            <span className={cn("grid h-full w-full place-items-center text-xs font-extrabold", "text-black/90 md:text-white/95")}>
+            <span
+              className={cn(
+                "grid h-full w-full place-items-center text-xs font-extrabold",
+                "text-black/90 md:text-white/95"
+              )}
+            >
               {initials}
             </span>
           )}
@@ -294,9 +287,7 @@ function ProfileDropdown({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="grid h-full w-full place-items-center text-sm font-extrabold text-white">
-                    {initials}
-                  </span>
+                  <span className="grid h-full w-full place-items-center text-sm font-extrabold text-white">{initials}</span>
                 )}
               </span>
 
@@ -316,12 +307,7 @@ function ProfileDropdown({
             Профайл
           </Link>
 
-          <Link
-            href="/profile/purchases"
-            onClick={() => setOpen(false)}
-            className={itemRow}
-            role="menuitem"
-          >
+          <Link href="/profile/purchases" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
             <span className={iconBox}>
               <IconReceipt className="h-5 w-5 text-white/90" />
             </span>
@@ -337,12 +323,7 @@ function ProfileDropdown({
 
           <div className="h-px bg-white/12 mx-5 my-1" />
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            className={cn(itemRow, "text-red-200 hover:text-red-100")}
-            role="menuitem"
-          >
+          <button type="button" onClick={handleLogout} className={cn(itemRow, "text-red-200 hover:text-red-100")} role="menuitem">
             <span className={iconBox}>
               <IconLogout className="h-5 w-5 text-red-200" />
             </span>
@@ -364,9 +345,7 @@ function ProfileDropdown({
                   <IconGlobe className="h-5 w-5 text-white/90" />
                   Language
                 </span>
-                <span className="text-xs font-extrabold text-white bg-white/12 px-3 py-1.5 rounded-xl">
-                  {lang}
-                </span>
+                <span className="text-xs font-extrabold text-white bg-white/12 px-3 py-1.5 rounded-xl">{lang}</span>
               </button>
 
               <button
@@ -379,11 +358,7 @@ function ProfileDropdown({
                 )}
               >
                 <span className="flex items-center gap-3 text-[14px] font-semibold text-white/90">
-                  {theme === "dark" ? (
-                    <IconMoon className="h-5 w-5 text-white/90" />
-                  ) : (
-                    <IconSun className="h-5 w-5 text-white/90" />
-                  )}
+                  {theme === "dark" ? <IconMoon className="h-5 w-5 text-white/90" /> : <IconSun className="h-5 w-5 text-white/90" />}
                   Theme
                 </span>
                 <span className="text-xs font-extrabold text-white bg-white/12 px-3 py-1.5 rounded-xl">
@@ -392,9 +367,7 @@ function ProfileDropdown({
               </button>
             </div>
 
-            <div className="mt-3 text-[11px] text-white/45">
-              * Theme/Language тохиргоо localStorage-д хадгалагдана.
-            </div>
+            <div className="mt-3 text-[11px] text-white/45">* Theme/Language тохиргоо localStorage-д хадгалагдана.</div>
           </div>
         </div>
       )}
@@ -411,12 +384,14 @@ function MobileMenu({
   isAuthed,
   onLogout,
   goLogin,
+  isAdmin,
 }: {
   open: boolean;
   onClose: () => void;
   isAuthed: boolean;
   onLogout: () => Promise<void> | void;
   goLogin: () => void;
+  isAdmin: boolean;
 }) {
   const router = useRouter();
 
@@ -442,11 +417,7 @@ function MobileMenu({
   return (
     <div className="fixed inset-0 z-[9999] md:hidden">
       {/* overlay */}
-      <button
-        aria-label="Close menu overlay"
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-      />
+      <button aria-label="Close menu overlay" className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       {/* panel */}
       <div className="absolute left-0 top-0 h-full w-[86vw] max-w-[360px] bg-white shadow-2xl">
@@ -472,7 +443,32 @@ function MobileMenu({
             <span className={right}>›</span>
           </button>
 
-          {/* ✅ Чиний хүссэн: энэ 2-ын ДОРОО нэмэгдэнэ */}
+          {/* ✅ admin menu (mobile) */}
+          {isAuthed && isAdmin && (
+            <>
+              <div className="pt-2 border-t border-black/10" />
+              <div className="text-[12px] tracking-widest text-black/40 px-1">ADMIN</div>
+
+              <button onClick={() => go("/admin")} className={item}>
+                <span>Admin Home</span>
+                <span className={right}>›</span>
+              </button>
+              <button onClick={() => go("/admin/users")} className={item}>
+                <span>Users</span>
+                <span className={right}>›</span>
+              </button>
+              <button onClick={() => go("/admin/banner")} className={item}>
+                <span>Banner</span>
+                <span className={right}>›</span>
+              </button>
+              <button onClick={() => go("/analist")} className={item}>
+                <span>Analist</span>
+                <span className={right}>›</span>
+              </button>
+            </>
+          )}
+
+          {/* ✅ authenticated items */}
           {isAuthed && (
             <button onClick={() => go("/profile/purchases")} className={item}>
               <span>Худалдан авалтын түүх</span>
@@ -552,6 +548,23 @@ export default function Header() {
   // ✅ mobile drawer state
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // ✅ Admin dropdown (desktop)
+  const [adminOpen, setAdminOpen] = useState(false);
+  const adminRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!adminRef.current) return;
+      if (!adminRef.current.contains(e.target as Node)) setAdminOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  useEffect(() => {
+    setAdminOpen(false);
+  }, [pathname]);
+
   return (
     <header
       className={cn(
@@ -617,10 +630,70 @@ export default function Header() {
             </Link>
           )}
 
+          {/* ✅ ADMIN dropdown */}
           {!loading && user && isAdmin && (
-            <Link className="rounded-full px-3 py-2 hover:bg-black/5 md:hover:bg-white/10" href="/admin">
-              ADMIN
-            </Link>
+            <div ref={adminRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setAdminOpen((v) => !v)}
+                onMouseEnter={() => setAdminOpen(true)}
+                className={cn(
+                  "rounded-full px-3 py-2 font-semibold",
+                  "hover:bg-black/5 md:hover:bg-white/10",
+                  adminOpen && "bg-black/5 md:bg-white/10"
+                )}
+                aria-haspopup="menu"
+                aria-expanded={adminOpen}
+              >
+            АДМИН
+              </button>
+
+              {adminOpen && (
+                <div
+                  onMouseLeave={() => setAdminOpen(false)}
+                  className={cn(
+                    "absolute right-0 mt-2 w-52 overflow-hidden rounded-2xl",
+                    "border border-white/15 bg-black/90 text-white shadow-[0_20px_60px_rgba(0,0,0,0.55)]",
+                    "ring-1 ring-white/10 z-[999]"
+                  )}
+                  role="menu"
+                >
+                  <Link
+                    href="/admin"
+                    onClick={() => setAdminOpen(false)}
+                    className="block px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                    role="menuitem"
+                  >
+                    ADMIN Home
+                  </Link>
+                  <div className="h-px bg-white/10" />
+                  <Link
+                    href="/admin/users"
+                    onClick={() => setAdminOpen(false)}
+                    className="block px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                    role="menuitem"
+                  >
+                    USERS
+                  </Link>
+                  <Link
+                    href="/admin/BANNER"
+                    onClick={() => setAdminOpen(false)}
+                    className="block px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                    role="menuitem"
+                  >
+                    BANNER
+                  </Link>
+                  <Link
+                    href="/analist"
+                    onClick={() => setAdminOpen(false)}
+                    className="block px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                    role="menuitem"
+                  >
+                ANALIST
+                  </Link>
+                </div>
+              )}
+            </div>
           )}
 
           {loading && <div className="ml-2 h-9 w-24 rounded-full bg-black/5 animate-pulse md:bg-white/10" />}
@@ -665,6 +738,7 @@ export default function Header() {
         isAuthed={!!user}
         onLogout={onLogout}
         goLogin={goLogin}
+        isAdmin={isAdmin}
       />
     </header>
   );

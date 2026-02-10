@@ -1,6 +1,6 @@
 // app/api/admin/users/[uid]/detail/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebaseAdmin";
+import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
 
 /**
  * Admin only: user detail + purchases + issues

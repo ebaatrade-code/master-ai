@@ -1,6 +1,6 @@
 // app/api/admin/users/list/route.ts
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb } from "@/lib/firebaseAdmin.server";
 import { requireAdminFromRequest } from "@/lib/admin/requireAdmin";
 
 type Row = {

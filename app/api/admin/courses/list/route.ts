@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb } from "@/lib/firebaseAdmin.server";
 import { requireAdminFromRequest } from "@/lib/admin/requireAdmin";
 
 type CourseLite = { id: string; title: string };

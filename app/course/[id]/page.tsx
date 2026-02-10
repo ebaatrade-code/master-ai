@@ -17,7 +17,7 @@ import {
 import { getDownloadURL, ref } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
-import { grantPurchase } from "@/lib/purchase";
+import QPayCheckoutModal from "@/components/QPayCheckoutModal";
 
 type Course = {
   title: string;
@@ -25,10 +25,9 @@ type Course = {
   oldPrice?: number;
   thumbnailUrl?: string;
 
-  // ✅ duration fields (admin-аас ирнэ)
-  durationDays?: number; // number (60, 90, ...)
-  durationLabel?: string; // "60 хоног", "3 сар", ...
-  duration?: string; // legacy admin field (optional)
+  durationDays?: number;
+  durationLabel?: number | string;
+  duration?: string;
 
   shortDescription?: string;
   description?: string;
@@ -64,8 +63,10 @@ type Lesson = {
 type ProgressDoc = {
   byLessonSec: Record<string, number>;
   lastLessonId: string;
-  updatedAt: any; // timestamp
+  updatedAt: any;
 };
+
+type Deeplink = { name?: string; description?: string; logo?: string; link: string };
 
 const money = (n: number) => (Number.isFinite(n) ? n.toLocaleString("mn-MN") : "0");
 
@@ -84,7 +85,6 @@ function splitLines(text?: string) {
     .filter(Boolean);
 }
 
-// ✅ progress helpers (Firestore data дээр суурилна)
 function calcCoursePercentFromMap(params: {
   lessons: Array<{ id: string; durationSec?: number }>;
   byLessonSec: Record<string, number>;
@@ -97,7 +97,6 @@ function calcCoursePercentFromMap(params: {
   for (const l of params.lessons) {
     const dur = Number(l.durationSec);
     const d = Number.isFinite(dur) && dur > 0 ? dur : fallback;
-
     total += d;
 
     const watched = Number(params.byLessonSec?.[l.id] ?? 0);
@@ -115,13 +114,10 @@ function isLessonCompletedFromMap(params: {
 }) {
   const watched = Number(params.byLessonSec?.[params.lessonId] ?? 0);
   const dur = Number(params.durationSec);
-
-  // ✅ 90% буюу 3 мин-ээс дээш үзсэн бол completed
   if (Number.isFinite(dur) && dur > 0) return watched >= dur * 0.9;
   return watched >= 180;
 }
 
-/** ✅ DESKTOP info block (өөрчлөхгүй гэж үзээд) */
 function InfoBlock({ title, items }: { title: string; items: string[] }) {
   if (!items?.length) return null;
   return (
@@ -144,7 +140,6 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-/** ✅ MOBILE info block (цагаан background дээр хар бичигтэй) */
 function MobileInfoBlock({ title, items }: { title: string; items: string[] }) {
   if (!items?.length) return null;
   return (
@@ -183,7 +178,6 @@ function formatExpiresText(ms?: number | null) {
 export default function CoursePage() {
   const router = useRouter();
 
-  // ✅ app/course/[id]/page.tsx -> params.id
   const params = useParams<{ id?: string }>();
   const courseId = String(params?.id ?? "").trim();
 
@@ -201,12 +195,8 @@ export default function CoursePage() {
 
   const [fetching, setFetching] = useState(true);
   const [videoLoading, setVideoLoading] = useState(false);
-  const [mockBuying, setMockBuying] = useState(false);
 
-  // ✅ purchased view tab
   const [tab, setTab] = useState<"list" | "desc">("list");
-
-  // ✅ NOT PURCHASED mobile tab
   const [npTab, setNpTab] = useState<"details" | "content">("content");
 
   const [toast, setToast] = useState<string | null>(null);
@@ -221,7 +211,6 @@ export default function CoursePage() {
     return lessons.find((l) => l.id === selectedLessonId) ?? null;
   }, [selectedLessonId, lessons]);
 
-  // ✅ PROGRESS states (Firestore)
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [coursePercent, setCoursePercent] = useState(0);
   const [byLessonSec, setByLessonSec] = useState<Record<string, number>>({});
@@ -233,11 +222,119 @@ export default function CoursePage() {
     return doc(db, "users", user.uid, "courseProgress", courseId);
   }, [user?.uid, courseId]);
 
-  // ✅ PURCHASE EXPIRY
   const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
   const [isExpired, setIsExpired] = useState(false);
 
-  // ✅ прогресс хадгалах helper
+  // ✅ PAYMENT MODAL (ганц UI)
+  const [buyOpen, setBuyOpen] = useState(false);
+  const [payBusy, setPayBusy] = useState(false);
+  const [payStatus, setPayStatus] = useState("");
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [qrText, setQrText] = useState<string | null>(null);
+  const [urls, setUrls] = useState<Deeplink[]>([]);
+
+  const amount = useMemo(() => Number(course?.price ?? 0), [course?.price]);
+
+  function guardLogin(): boolean {
+    if (user) return true;
+    router.push(`/login?callbackUrl=${encodeURIComponent(`/course/${courseId}`)}`);
+    return false;
+  }
+
+  async function createCheckoutInvoice() {
+    if (!guardLogin()) return;
+    if (!courseId) return;
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPayStatus("Үнэ буруу байна. Admin дээр course price-аа шалгаарай.");
+      return;
+    }
+
+    try {
+      setPayBusy(true);
+      setPayStatus("Төлбөр үүсгэж байна…");
+      setOrderId(null);
+      setQrImage(null);
+      setQrText(null);
+      setUrls([]);
+
+      const idToken = await user!.getIdToken();
+
+      const res = await fetch("/api/qpay/checkout/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          courseId,
+          amount,
+          title: course?.title ?? "Course",
+        }),
+      });
+
+      const data: any = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setPayStatus(data?.message || data?.error || data?.detail?.error || "Invoice үүсгэхэд алдаа гарлаа.");
+        return;
+      }
+
+      setOrderId(String(data?.orderId || ""));
+      setQrImage(data?.qrImage ? String(data.qrImage) : null);
+      setQrText(data?.qrText ? String(data.qrText) : null);
+      setUrls(Array.isArray(data?.urls) ? (data.urls as Deeplink[]) : []);
+      setPayStatus("QR эсвэл банкны апп (deeplink)-аар төлөөд “Төлбөр шалгах” дарна уу.");
+    } catch (e: any) {
+      setPayStatus(e?.message || "Алдаа гарлаа. Дахин оролдоно уу.");
+    } finally {
+      setPayBusy(false);
+    }
+  }
+
+  async function handleCheckPayment() {
+    if (!user || !orderId) {
+      setPayStatus("Order олдсонгүй. Дахин үүсгээд оролдоорой.");
+      return;
+    }
+
+    try {
+      setPayBusy(true);
+      setPayStatus("Төлбөр шалгаж байна…");
+      const idToken = await user.getIdToken();
+
+      const res = await fetch("/api/qpay/checkout/check", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ orderId }),
+      });
+
+      const data: any = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        setPayStatus(data?.message || data?.error || "Төлбөр шалгахад алдаа гарлаа.");
+        return;
+      }
+
+      if (data?.status === "PAID") {
+        setPayStatus("Төлбөр баталгаажлаа ✅ Курс нээгдлээ!");
+        setToast("✅ Төлбөр баталгаажлаа. Сургалт нээгдлээ!");
+       setBuyOpen(false);
+        router.refresh();
+      } else {
+        setPayStatus("Одоогоор төлбөр баталгаажаагүй байна. Дахин шалгана уу.");
+      }
+    } catch (e: any) {
+      setPayStatus(e?.message || "Шалгах үед алдаа гарлаа. Дахин оролдоно уу.");
+    } finally {
+      setPayBusy(false);
+    }
+  }
+
   const saveProgress = async (lessonId: string, nextSec: number) => {
     if (!progressDocRef) return;
 
@@ -266,7 +363,6 @@ export default function CoursePage() {
     }
   };
 
-  // ✅ fetch course + lessons
   useEffect(() => {
     if (loading) return;
     if (!courseId) return;
@@ -297,7 +393,6 @@ export default function CoursePage() {
     run();
   }, [loading, courseId, router]);
 
-  // ✅ load purchase expiry from user doc (once purchased)
   useEffect(() => {
     const run = async () => {
       if (!isPurchased) {
@@ -330,7 +425,6 @@ export default function CoursePage() {
     run();
   }, [isPurchased, user?.uid, courseId]);
 
-  // ✅ NEW: expiresAt хүрмэгц автоматаар expired болгох (refresh шаардлагагүй)
   useEffect(() => {
     if (!expiresAtMs) return;
 
@@ -348,7 +442,6 @@ export default function CoursePage() {
     return () => clearTimeout(t);
   }, [expiresAtMs]);
 
-  // ✅ load progress from Firestore (once user + purchased + NOT expired)
   useEffect(() => {
     const run = async () => {
       if (!isPurchased) return;
@@ -386,7 +479,6 @@ export default function CoursePage() {
     run();
   }, [isPurchased, isExpired, user?.uid, progressDocRef]);
 
-  // ✅ fetch videoSrc on lesson change (ONLY if purchased + NOT expired)
   useEffect(() => {
     const run = async () => {
       setVideoSrc(null);
@@ -425,7 +517,6 @@ export default function CoursePage() {
     run();
   }, [selectedLessonId, lessons, isPurchased, isExpired]);
 
-  // ✅ recalc percent when lessons/progress change (ONLY if NOT expired)
   useEffect(() => {
     if (!isPurchased) return;
     if (isExpired) return;
@@ -439,27 +530,11 @@ export default function CoursePage() {
     setCoursePercent(pct);
   }, [isPurchased, isExpired, lessons, byLessonSec]);
 
-  const handleBuyNow = async () => {
-    if (!courseId) return;
-    if (!user) {
-      router.push(`/login?callbackUrl=${encodeURIComponent(`/course/${courseId}`)}`);
-      return;
-    }
-    try {
-      setMockBuying(true);
-      await grantPurchase(courseId);
-      setToast("✅ Сургалт нээгдлээ");
-    } finally {
-      setMockBuying(false);
-    }
-  };
-
   if (fetching) {
     return <div className="mx-auto max-w-6xl px-6 py-10 text-white/70">Уншиж байна...</div>;
   }
   if (!course) return null;
 
-  // ✅ duration label: admin-аас ирсэн утгыг 1:1 харуулна
   const durationLabel =
     String(course.durationLabel || "").trim() ||
     String(course.duration || "").trim() ||
@@ -480,16 +555,14 @@ export default function CoursePage() {
   const learnFallback = [
     "AI-аар зураг/видео/контент хийх бодит workflow",
     "Free + Pro tool-уудыг зөв хослуулж ашиглах",
-    "Free + Pro tool-уудыг зөв хослуулж ашиглах",
     "Reels/Ads-д тохирсон контент бүтэц, темп",
     "Бэлэн жишээн дээр давтаж хийж сурах",
   ];
 
   // =========================================================
-  // ✅ PURCHASED VIEW (өөрчлөхгүй)
+  // ✅ PURCHASED VIEW (ХЭВЭЭР)
   // =========================================================
   if (isPurchased) {
-    // ✅ expired UI
     if (isExpired) {
       return (
         <div className="lesson-viewer min-h-[calc(100vh-80px)]">
@@ -545,7 +618,6 @@ export default function CoursePage() {
     return (
       <div className="lesson-viewer min-h-[calc(100vh-80px)]">
         <div className="relative mx-auto max-w-5xl px-6 pt-10 pb-16">
-          {/* ✅ title only */}
           <div className="flex justify-center">
             <div className="w-full max-w-3xl px-6 py-2 text-center">
               <div className="text-2xl sm:text-3xl font-extrabold tracking-wide text-yellow-400">
@@ -554,7 +626,6 @@ export default function CoursePage() {
             </div>
           </div>
 
-          {/* ✅ PROGRESS */}
           <div className="mt-6 flex justify-center">
             <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-black/20 p-4">
               <div className="flex items-center justify-between gap-3">
@@ -581,7 +652,6 @@ export default function CoursePage() {
             </div>
           </div>
 
-          {/* ✅ VIDEO */}
           <div className="mt-6 flex justify-center">
             <div className="w-full max-w-3xl rounded-2xl border border-amber-300/25 bg-black/20 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.40)]">
               <div className="mb-3 flex items-center justify-between">
@@ -674,7 +744,6 @@ export default function CoursePage() {
             </div>
           </div>
 
-          {/* ✅ tabs */}
           <div className="mt-6 flex justify-center">
             <div className="flex flex-wrap items-center justify-center gap-4">
               <button
@@ -711,7 +780,6 @@ export default function CoursePage() {
             </div>
           </div>
 
-          {/* ✅ panel */}
           <div className="mt-6 flex justify-center">
             <div className="w-full max-w-3xl rounded-2xl border border-amber-300/20 bg-black/15 p-4">
               {tab === "desc" ? (
@@ -807,17 +875,13 @@ export default function CoursePage() {
 
   // =========================================================
   // ✅ NOT PURCHASED VIEW
-  // ✅ MOBILE: цагаан background + хар бичиг
-  // ✅ DESKTOP: хуучин dark layout (өөрчлөхгүй)
+  // ✅ BUY -> Course дээрээс ШУУД “ганц” төлбөрийн modal
   // =========================================================
   return (
     <>
-      {/* =========================
-          ✅ MOBILE (lg-): WHITE / BLACK
-      ========================= */}
+      {/* MOBILE */}
       <div className="lg:hidden min-h-[calc(100vh-80px)] bg-white text-black overflow-x-hidden">
         <div className="mx-auto max-w-6xl px-6 pt-8 pb-12">
-          {/* HERO (clean) */}
           {course.thumbnailUrl ? (
             <div className="mx-auto w-full overflow-hidden rounded-[18px] border border-black/10 bg-white shadow-sm">
               <div className="relative aspect-video w-full">
@@ -826,7 +890,6 @@ export default function CoursePage() {
             </div>
           ) : null}
 
-          {/* Title + short desc */}
           <div className="mt-6">
             <div className="flex items-center gap-3">
               <div className="mt-[10px] h-5 w-[2px] rounded-full bg-black/20" />
@@ -846,7 +909,6 @@ export default function CoursePage() {
             </div>
           </div>
 
-          {/* BUY CARD (clean white) */}
           <div className="mt-5">
             <div className="relative rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between gap-4">
@@ -858,7 +920,9 @@ export default function CoursePage() {
                 </div>
 
                 <div className="text-right">
-                  <div className="text-xl font-extrabold tracking-tight text-black">{money(Number(course.price ?? 0))}₮</div>
+                  <div className="text-xl font-extrabold tracking-tight text-black">
+                    {money(Number(course.price ?? 0))}₮
+                  </div>
 
                   {course.oldPrice ? (
                     <div className="mt-0.5 text-sm font-bold line-through text-red-500">
@@ -870,8 +934,10 @@ export default function CoursePage() {
 
               <button
                 type="button"
-                onClick={handleBuyNow}
-                disabled={mockBuying}
+                onClick={() => {
+                  setBuyOpen(true);
+                  createCheckoutInvoice();
+                }}
                 className="
                   mt-3 w-full rounded-2xl
                   px-5 py-3
@@ -881,15 +947,13 @@ export default function CoursePage() {
                   shadow-[0_10px_24px_rgba(0,120,255,0.22)]
                   hover:from-cyan-300 hover:to-blue-400
                   transition-all duration-300
-                  disabled:opacity-60
                 "
               >
-                {mockBuying ? "ИДЭВХЖҮҮЛЖ БАЙНА..." : "Худалдан авах"}
+                Худалдан авах
               </button>
             </div>
           </div>
 
-          {/* TABS (mobile) — LEFT: content, RIGHT: details */}
           <div className="mt-5">
             <div className="grid grid-cols-2 gap-2 rounded-2xl border border-black/10 bg-white p-2 shadow-sm">
               <button
@@ -897,9 +961,7 @@ export default function CoursePage() {
                 onClick={() => setNpTab("content")}
                 className={[
                   "h-9 rounded-xl text-center text-[11px] font-extrabold tracking-wide transition",
-                  npTab === "content"
-                    ? "bg-black/5 text-black border border-black/10"
-                    : "text-black/55 hover:text-black",
+                  npTab === "content" ? "bg-black/5 text-black border border-black/10" : "text-black/55 hover:text-black",
                 ].join(" ")}
               >
                 Хичээлийн агуулга
@@ -910,16 +972,13 @@ export default function CoursePage() {
                 onClick={() => setNpTab("details")}
                 className={[
                   "h-9 rounded-xl text-center text-[11px] font-extrabold tracking-wide transition",
-                  npTab === "details"
-                    ? "bg-black/5 text-black border border-black/10"
-                    : "text-black/55 hover:text-black",
+                  npTab === "details" ? "bg-black/5 text-black border border-black/10" : "text-black/55 hover:text-black",
                 ].join(" ")}
               >
                 Дэлгэрэнгүй мэдээлэл
               </button>
             </div>
 
-            {/* PANELS */}
             <div className="mt-4">
               {npTab === "content" ? (
                 <div className="space-y-3">
@@ -967,10 +1026,7 @@ export default function CoursePage() {
                     title="Энэ сургалт хэнд тохирох вэ?"
                     items={whoForItems.length ? whoForItems : whoForFallback}
                   />
-                  <MobileInfoBlock
-                    title="Юу сурах вэ?"
-                    items={learnItems.length ? learnItems : learnFallback}
-                  />
+                  <MobileInfoBlock title="Юу сурах вэ?" items={learnItems.length ? learnItems : learnFallback} />
                 </div>
               )}
             </div>
@@ -984,9 +1040,7 @@ export default function CoursePage() {
         </div>
       </div>
 
-      {/* =========================
-          ✅ DESKTOP (lg+): хуучин dark layout (өөрчлөхгүй)
-      ========================= */}
+      {/* DESKTOP */}
       <div
         className="hidden lg:block min-h-[calc(100vh-80px)] text-white overflow-x-hidden"
         style={{
@@ -996,7 +1050,6 @@ export default function CoursePage() {
       >
         <div className="mx-auto max-w-6xl px-6 pt-8 pb-12">
           <div className="hidden lg:block">
-            {/* ✅ HERO THUMBNAIL */}
             {course.thumbnailUrl ? (
               <div className="mx-auto w-full max-w-6xl overflow-hidden rounded-[28px] border border-white/10 bg-black/35 shadow-[0_22px_90px_rgba(0,0,0,0.55)]">
                 <div className="relative aspect-video w-full">
@@ -1007,17 +1060,12 @@ export default function CoursePage() {
                     className="absolute inset-0 h-full w-full object-cover blur-3xl scale-125 opacity-45"
                   />
                   <div className="absolute inset-0 bg-black/55" />
-                  <img
-                    src={course.thumbnailUrl}
-                    alt={course.title}
-                    className="relative z-10 h-full w-full object-contain"
-                  />
+                  <img src={course.thumbnailUrl} alt={course.title} className="relative z-10 h-full w-full object-contain" />
                 </div>
               </div>
             ) : null}
 
             <div className="mt-8 grid gap-8 lg:grid-cols-2">
-              {/* LEFT */}
               <section className="px-1">
                 <div className="mb-6">
                   <div className="flex items-center gap-3">
@@ -1064,12 +1112,7 @@ export default function CoursePage() {
                         >
                           <div className="h-16 w-28 overflow-hidden rounded-2xl border border-white/10 bg-black/25">
                             {course.thumbnailUrl ? (
-                              <img
-                                src={course.thumbnailUrl}
-                                alt=""
-                                aria-hidden="true"
-                                className="h-full w-full object-cover opacity-90"
-                              />
+                              <img src={course.thumbnailUrl} alt="" aria-hidden="true" className="h-full w-full object-cover opacity-90" />
                             ) : null}
                           </div>
 
@@ -1092,33 +1135,32 @@ export default function CoursePage() {
                 </div>
               </section>
 
-              {/* RIGHT */}
               <aside className="space-y-5 lg:sticky lg:top-24 h-fit">
                 <div className="space-y-5">
                   <div
                     className="
-                    relative
-                    rounded-2xl
-                    border
-                    border-cyan-300/70
-                    bg-black/40
-                    p-6
-                    shadow-[
-                      inset_0_0_12px_rgba(34,211,238,0.35),
-                      0_0_12px_rgba(34,211,238,0.55),
-                      0_0_32px_rgba(34,211,238,0.45),
-                      0_0_72px_rgba(34,211,238,0.25)
-                    ]
-                    transition-all
-                    duration-300
-                    hover:border-cyan-200
-                    hover:shadow-[
-                      inset_0_0_18px_rgba(34,211,238,0.55),
-                      0_0_18px_rgba(34,211,238,0.8),
-                      0_0_48px_rgba(34,211,238,0.6),
-                      0_0_96px_rgba(34,211,238,0.35)
-                    ]
-                  "
+                      relative
+                      rounded-2xl
+                      border
+                      border-cyan-300/70
+                      bg-black/40
+                      p-6
+                      shadow-[
+                        inset_0_0_12px_rgba(34,211,238,0.35),
+                        0_0_12px_rgba(34,211,238,0.55),
+                        0_0_32px_rgba(34,211,238,0.45),
+                        0_0_72px_rgba(34,211,238,0.25)
+                      ]
+                      transition-all
+                      duration-300
+                      hover:border-cyan-200
+                      hover:shadow-[
+                        inset_0_0_18px_rgba(34,211,238,0.55),
+                        0_0_18px_rgba(34,211,238,0.8),
+                        0_0_48px_rgba(34,211,238,0.6),
+                        0_0_96px_rgba(34,211,238,0.35)
+                      ]
+                    "
                   >
                     <div className="mb-4 flex items-center justify-between">
                       <div className="flex items-center gap-3 text-lg font-extrabold text-white">
@@ -1131,10 +1173,10 @@ export default function CoursePage() {
                       <div className="text-right">
                         <div
                           className="
-                          text-2xl font-extrabold tracking-tight
-                          text-white
-                          drop-shadow-[0_0_10px_rgba(255,255,255,0.9)]
-                        "
+                            text-2xl font-extrabold tracking-tight
+                            text-white
+                            drop-shadow-[0_0_10px_rgba(255,255,255,0.9)]
+                          "
                         >
                           {money(Number(course.price ?? 0))}₮
                         </div>
@@ -1142,10 +1184,10 @@ export default function CoursePage() {
                         {course.oldPrice && (
                           <div
                             className="
-                            mt-0.5 text-sm font-extrabold line-through
-                            text-red-500
-                            drop-shadow-[0_0_10px_rgba(239,68,68,1)]
-                          "
+                              mt-0.5 text-sm font-extrabold line-through
+                              text-red-500
+                              drop-shadow-[0_0_10px_rgba(239,68,68,1)]
+                            "
                           >
                             {money(Number(course.oldPrice))}₮
                           </div>
@@ -1155,28 +1197,28 @@ export default function CoursePage() {
 
                     <button
                       type="button"
-                      onClick={handleBuyNow}
-                      disabled={mockBuying}
+                      onClick={() => {
+                        setBuyOpen(true);
+                        createCheckoutInvoice();
+                      }}
                       className="
-                      w-full rounded-full
-                      px-6 py-4
-                      text-sm font-extrabold uppercase tracking-wide
-                      text-white
-                      bg-gradient-to-r from-cyan-400 to-blue-500
-                      shadow-[0_0_35px_rgba(0,180,255,0.75)]
-                      hover:from-cyan-300 hover:to-blue-400
-                      hover:shadow-[0_0_45px_rgba(0,180,255,0.95)]
-                      transition-all duration-300
-                      disabled:opacity-60
-                    "
+                        w-full rounded-full
+                        px-6 py-4
+                        text-sm font-extrabold uppercase tracking-wide
+                        text-white
+                        bg-gradient-to-r from-cyan-400 to-blue-500
+                        shadow-[0_0_35px_rgba(0,180,255,0.75)]
+                        hover:from-cyan-300 hover:to-blue-400
+                        hover:shadow-[0_0_45px_rgba(0,180,255,0.95)]
+                        transition-all duration-300
+                      "
                     >
-                      {mockBuying ? "ИДЭВХЖҮҮЛЖ БАЙНА..." : "ХУДАЛДАЖ АВАХ →"}
+                      ХУДАЛДАЖ АВАХ →
                     </button>
                   </div>
                 </div>
 
                 <InfoBlock title="Энэ сургалт хэнд тохирох вэ?" items={whoForItems.length ? whoForItems : whoForFallback} />
-
                 <InfoBlock title="Юу сурах вэ?" items={learnItems.length ? learnItems : learnFallback} />
               </aside>
             </div>
@@ -1189,6 +1231,15 @@ export default function CoursePage() {
           ) : null}
         </div>
       </div>
-    </>
+
+     {/* ✅ ГАНЦ ТӨЛБӨРИЙН UI MODAL */}
+<QPayCheckoutModal
+  open={buyOpen}
+  onClose={() => setBuyOpen(false)}
+  courseId={courseId}
+  title={course.title}
+  amount={amount}
+/>
+  </>
   );
 }

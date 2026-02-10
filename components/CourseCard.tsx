@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
-import PaymentChoiceModal from "@/components/PaymentChoiceModal";
 import QPayDeeplinkModal from "@/components/QPayDeeplinkModal";
 
 type Course = {
@@ -269,22 +268,6 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
         </div>
       </CardWrap>
 
-      {/* ✅ Доорх modal-уудыг ОГТ өөрчлөхгүй үлдээв (ирээдүйд буцааж холбоход ready) */}
-      <PaymentChoiceModal
-        open={choiceOpen}
-        onClose={() => setChoiceOpen(false)}
-        onChooseQpay={() => {
-          setChoiceOpen(false);
-          setBankOpen(true);
-          setPayStatus(
-            "QPAY QR хэсгийг дараагийн алхам дээр production дээр холбоно. Одоохондоо 'Банкны аппаар төлөх'-ийг тестлэе."
-          );
-        }}
-        onChooseBank={() => {
-          setChoiceOpen(false);
-          createBankDeeplinkInvoice();
-        }}
-      />
 
       <QPayDeeplinkModal
         open={bankOpen}

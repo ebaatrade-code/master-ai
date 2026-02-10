@@ -1,6 +1,6 @@
 // app/api/admin/users/[uid]/grant/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb } from "@/lib/firebaseAdmin.server";
 import { requireAdminFromRequest } from "@/lib/admin/requireAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 

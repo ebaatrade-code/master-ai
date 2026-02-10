@@ -1,5 +1,5 @@
 // lib/admin/requireAdmin.ts
-import { adminAuth, adminDb } from "@/lib/firebaseAdmin";
+import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
 
 export async function requireAdminFromRequest(req: Request) {
   const authHeader = req.headers.get("authorization") || "";
