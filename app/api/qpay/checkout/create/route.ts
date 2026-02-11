@@ -15,7 +15,6 @@ type QPayAuthResp = {
   token_type?: string;
 };
 
-// ⚠️ QPay response нэрс янз бүр байж болох тул "any" дээр resilient parse хийнэ
 type AnyObj = Record<string, any>;
 
 function envOrThrow(name: string): string {
@@ -104,18 +103,26 @@ async function createInvoice(payload: {
     throw new Error("QPAY invoice: invalid JSON response");
   }
 
-  // invoice_id байх ёстой
   const invoiceId = data?.invoice_id || data?.invoiceId;
   if (!invoiceId) throw new Error("QPAY invoice: invoice_id missing");
 
   return data as AnyObj;
 }
 
-// ✅ олон нэрнүүдээс утга шүүж авах helper
 function pickString(obj: AnyObj, keys: string[]): string {
   for (const k of keys) {
     const v = obj?.[k];
     if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
+}
+
+function extractShortUrlFromUrls(urls: any): string {
+  if (!Array.isArray(urls)) return "";
+  for (const u of urls) {
+    const link = typeof u?.link === "string" ? u.link : "";
+    // qpay short url ихэвчлэн https://s.qpay.mn/...
+    if (link && /https?:\/\/s\.qpay\.mn\//i.test(link)) return link;
   }
   return "";
 }
@@ -144,7 +151,7 @@ export async function POST(req: NextRequest) {
     if (!courseId) return jsonError("courseId is required", 400);
     if (!Number.isFinite(amount) || amount <= 0) return jsonError("amount must be > 0", 400);
 
-    // 3) Callback URL
+    // 3) Callback URL (supports {APP_BASE_URL})
     const rawCb = envOrThrow("QPAY_CALLBACK_URL");
     const appBaseUrl = (process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
     const callbackUrl = rawCb.includes("{APP_BASE_URL}")
@@ -155,18 +162,18 @@ export async function POST(req: NextRequest) {
     const senderInvoiceNo = crypto.randomUUID();
     const inv = await createInvoice({ amount, description, callbackUrl, senderInvoiceNo });
 
-    // 5) Resilient parse (QPay-н талбарын нэрс өөр байж болно)
+    // 5) Parse
     const qpayInvoiceId = pickString(inv, ["invoice_id", "invoiceId"]);
     const qrText = pickString(inv, ["qr_text", "qrText", "qr_string", "qrString"]);
-    const qrImageBase64 = pickString(inv, ["qr_image", "qrImage"]); // base64 without data: prefix
-    const shortUrl = pickString(inv, ["qPay_shortUrl", "qpay_shortUrl", "shortUrl", "qpayShortUrl"]);
-
+    const qrImageBase64 = pickString(inv, ["qr_image", "qrImage"]);
     const urls = Array.isArray(inv?.urls) ? inv.urls : [];
 
-    // ✅ хамгийн чухал: QR payload-оо заавал ол
-    // 1) qr_image байвал шууд dataUrl
-    // 2) qr_text байвал тэр дээрээс үүсгэнэ
-    // 3) хоёулаа байхгүй бол shortUrl дээрээс QR үүсгэнэ (чи одоо яг ийм нөхцөлтэй байна)
+    // ✅ FIX: shortUrl-оо QPay response дээрээс зөв олно
+    const shortUrl =
+      pickString(inv, ["short_url", "shortUrl", "qpay_short_url", "qpayShortUrl"]) ||
+      extractShortUrlFromUrls(urls);
+
+    // ✅ хамгийн чухал: QR payload заавал олно
     let qrImageDataUrl: string | null = null;
     let qrPayloadUsed: string | null = null;
 
@@ -193,11 +200,8 @@ export async function POST(req: NextRequest) {
       qpayInvoiceId: qpayInvoiceId || null,
       senderInvoiceNo,
 
-      // raw data
       qrText: qrText || null,
       qrImageBase64: qrImageBase64 || null,
-
-      // ✅ UI-д шууд тавьж болох dataUrl (ихэвчлэн shortUrl дээрээс үүснэ)
       qrImageDataUrl: qrImageDataUrl || null,
       qrPayloadUsed: qrPayloadUsed || null,
 

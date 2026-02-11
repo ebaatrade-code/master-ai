@@ -1,127 +1,87 @@
 // FILE: app/api/qpay/create-invoice/route.ts
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
-import { qpayCreateInvoice } from "@/lib/qpay";
-import * as admin from "firebase-admin";
+import { qpayCreateInvoice, extractShortUrl, toDataUrlPng, type QPayInvoiceCreateReq } from "@/lib/qpay";
 
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-type ReqBody = {
-  courseId: string;
-};
+function noStoreJson(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+}
 
-function required(name: string, v?: string) {
+function mustEnv(name: string) {
+  const v = process.env[name];
   if (!v) throw new Error(`Missing env: ${name}`);
   return v;
 }
 
-function getBearer(req: Request) {
-  const h = req.headers.get("authorization") || "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] || null;
-}
-
-function jsonError(message: string, status = 400) {
-  return NextResponse.json({ ok: false, message }, { status });
+function isAmount(x: unknown): x is number {
+  return typeof x === "number" && Number.isFinite(x) && x > 0 && x < 1_000_000_000;
 }
 
 export async function POST(req: Request) {
   try {
-    const idToken = getBearer(req);
-    if (!idToken) return jsonError("Missing Authorization: Bearer <firebase_id_token>", 401);
+    const siteUrl = mustEnv("SITE_URL");
+    const invoiceCode = mustEnv("QPAY_INVOICE_CODE");
+    const receiverCode = mustEnv("QPAY_INVOICE_RECEIVER_CODE");
+    const branchCode = process.env.QPAY_BRANCH_CODE || "ONLINE";
 
-    const decoded = await adminAuth().verifyIdToken(idToken);
-    const uid = decoded.uid;
+    const json = (await req.json().catch(() => null)) as
+      | { amount?: unknown; description?: unknown; courseId?: unknown; uid?: unknown; orderId?: unknown; senderInvoiceNo?: unknown }
+      | null;
 
-    const body = (await req.json()) as ReqBody;
-    const courseId = (body?.courseId || "").trim();
-    if (!courseId) return jsonError("courseId is required", 400);
+    if (!json) return noStoreJson({ error: "Invalid JSON" }, 400);
 
-    const db = adminDb();
+    const amount = typeof json.amount === "string" ? Number(json.amount) : json.amount;
+    if (!isAmount(amount)) return noStoreJson({ error: "Invalid amount" }, 400);
 
-    // ✅ Course price-г server-side авна (client hardcode хийхгүй)
-    const courseRef = db.collection("courses").doc(courseId);
-    const courseSnap = await courseRef.get();
-    if (!courseSnap.exists) return jsonError("Course not found", 404);
+    const description = String(json.description ?? "Master AI payment").trim();
+    if (description.length < 2 || description.length > 140) return noStoreJson({ error: "Invalid description" }, 400);
 
-    const course = courseSnap.data() as any;
-    const title = String(course?.title || "Course");
-    const price = Number(course?.price);
+    // unique sender_invoice_no — таны screenshot дээр энэ хадгалагдаж байна
+    const senderInvoiceNoRaw = String(json.senderInvoiceNo ?? json.orderId ?? Date.now());
+    const sender_invoice_no = senderInvoiceNoRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || String(Date.now());
 
-    if (!Number.isFinite(price) || price <= 0) return jsonError("Invalid course price", 500);
+    const orderId = String(json.orderId ?? sender_invoice_no).slice(0, 80);
 
-    // ✅ Invoice code (QPay-ээс олгосон)
-    const invoiceCode = required("QPAY_INVOICE_CODE", process.env.QPAY_INVOICE_CODE);
+    // callback_url — QPay төлөгдсөний дараа энэ endpoint руу цохино
+    const callback_url =
+      `${siteUrl.replace(/\/$/, "")}/api/qpay/callback` +
+      `?orderId=${encodeURIComponent(orderId)}` +
+      `&courseId=${encodeURIComponent(String(json.courseId ?? ""))}` +
+      `&uid=${encodeURIComponent(String(json.uid ?? ""))}`;
 
-    // ✅ Callback base url (prod domain)
-    const callbackBase = required("QPAY_CALLBACK_BASE_URL", process.env.QPAY_CALLBACK_BASE_URL);
-    const senderInvoiceNo = `c_${courseId}_${uid}_${Date.now()}`.slice(0, 64);
-
-    // Firestore дээр invoice doc ID-г урьдчилж үүсгэж idempotent болгоно
-    const invRef = db.collection("qpayInvoices").doc();
-    const invoiceDocId = invRef.id;
-
-    const callbackUrl =
-      `${callbackBase.replace(/\/+$/, "")}/api/qpay/callback` +
-      `?invoiceDocId=${encodeURIComponent(invoiceDocId)}`;
-
-    // ✅ QPay invoice create
-    const inv = await qpayCreateInvoice({
+    const payload: QPayInvoiceCreateReq = {
       invoice_code: invoiceCode,
-      sender_invoice_no: senderInvoiceNo,
-      invoice_receiver_code: "terminal",
-      invoice_description: `${title} (${courseId})`,
-      amount: price,
-      callback_url: callbackUrl,
-      sender_branch_code: "ONLINE",
+      sender_invoice_no,
+      invoice_receiver_code: receiverCode,
+      sender_branch_code: branchCode,
+      invoice_description: description,
+      amount,
+      callback_url,
       allow_partial: false,
       allow_exceed: false,
-      enable_expiry: false,
-      note: null,
-      invoice_receiver_data: {
-        name: String(course?.receiverName || ""),
-        email: String(course?.receiverEmail || ""),
-        phone: String(course?.receiverPhone || ""),
-      },
-    });
+      enable_expiry: "false",
+      minimum_amount: null,
+      maximum_amount: null,
+    };
 
-    // ✅ Save invoice data
-    await invRef.set(
-      {
-        uid,
-        courseId,
-        courseTitle: title,
-        amount: price,
-        status: "PENDING",
-        qpayInvoiceId: inv.invoice_id,
-        qrText: inv.qr_text,
-        qrImageBase64: inv.qr_image ?? null,
-        shortUrl: inv.qPay_shortUrl ?? null,
-        urls: inv.urls ?? [],
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        paidAt: null,
-        finalizedAt: null,
-      },
-      { merge: false }
-    );
+    const inv = await qpayCreateInvoice(payload);
 
-    return NextResponse.json({
-      ok: true,
-      invoiceDocId,
+    return noStoreJson({
       qpayInvoiceId: inv.invoice_id,
-      amount: price,
-      courseId,
-      courseTitle: title,
-      qr_text: inv.qr_text,
-      qr_image: inv.qr_image ?? null,
-      shortUrl: inv.qPay_shortUrl ?? null,
-      urls: inv.urls ?? [],
+      qrText: inv.qr_text ?? null,
+      qrImageBase64: inv.qr_image ?? null,
+      qrImageDataUrl: toDataUrlPng(inv.qr_image ?? null),
+      urls: Array.isArray(inv.urls) ? inv.urls : [],
+      shortUrl: extractShortUrl(inv.urls),
+      amount,
+      description,
+      senderInvoiceNo: sender_invoice_no,
+      orderId,
+      callbackUrl: callback_url,
     });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "Server error";
-    // token invalid гэх мэт
-    const status = msg.toLowerCase().includes("id token") ? 401 : 500;
-    return NextResponse.json({ ok: false, message: msg }, { status });
+    return noStoreJson({ error: msg }, 500);
   }
 }

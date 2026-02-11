@@ -17,7 +17,7 @@ import {
 import { getDownloadURL, ref } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
-import QPayCheckoutModal from "@/components/QPayCheckoutModal";
+import QPayModal from "@/components/QPayModal";
 
 type Course = {
   title: string;
@@ -225,14 +225,15 @@ export default function CoursePage() {
   const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
   const [isExpired, setIsExpired] = useState(false);
 
-  // ✅ PAYMENT MODAL (ганц UI)
+   // ✅ QPAY MODAL (single)
   const [buyOpen, setBuyOpen] = useState(false);
-  const [payBusy, setPayBusy] = useState(false);
-  const [payStatus, setPayStatus] = useState("");
-  const [orderId, setOrderId] = useState<string | null>(null);
-  const [qrImage, setQrImage] = useState<string | null>(null);
-  const [qrText, setQrText] = useState<string | null>(null);
-  const [urls, setUrls] = useState<Deeplink[]>([]);
+  const [qpayData, setQpayData] = useState<{
+    ref: string; // qpayPayments docId
+    qrImageDataUrl?: string | null;
+    qr_image?: string | null;
+    shortUrl?: string | null;
+    urls?: Deeplink[];
+  } | null>(null);
 
   const amount = useMemo(() => Number(course?.price ?? 0), [course?.price]);
 
@@ -242,22 +243,17 @@ export default function CoursePage() {
     return false;
   }
 
-  async function createCheckoutInvoice() {
+    async function createCheckoutInvoice() {
     if (!guardLogin()) return;
     if (!courseId) return;
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      setPayStatus("Үнэ буруу байна. Admin дээр course price-аа шалгаарай.");
+      setToast("Үнэ буруу байна. Admin дээр course price-аа шалгаарай.");
       return;
     }
 
     try {
-      setPayBusy(true);
-      setPayStatus("Төлбөр үүсгэж байна…");
-      setOrderId(null);
-      setQrImage(null);
-      setQrText(null);
-      setUrls([]);
+      setQpayData(null);
 
       const idToken = await user!.getIdToken();
 
@@ -270,68 +266,34 @@ export default function CoursePage() {
         body: JSON.stringify({
           courseId,
           amount,
-          title: course?.title ?? "Course",
+          description: course?.title ?? "Master AI payment",
         }),
       });
 
       const data: any = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setPayStatus(data?.message || data?.error || data?.detail?.error || "Invoice үүсгэхэд алдаа гарлаа.");
+        setToast(data?.message || "Invoice үүсгэхэд алдаа гарлаа.");
         return;
       }
 
-      setOrderId(String(data?.orderId || ""));
-      setQrImage(data?.qrImage ? String(data.qrImage) : null);
-      setQrText(data?.qrText ? String(data.qrText) : null);
-      setUrls(Array.isArray(data?.urls) ? (data.urls as Deeplink[]) : []);
-      setPayStatus("QR эсвэл банкны апп (deeplink)-аар төлөөд “Төлбөр шалгах” дарна уу.");
-    } catch (e: any) {
-      setPayStatus(e?.message || "Алдаа гарлаа. Дахин оролдоно уу.");
-    } finally {
-      setPayBusy(false);
-    }
-  }
+      // ✅ API return: invoiceDocId, qrImageDataUrl, shortUrl, urls
+      const ref = String(data?.invoiceDocId || "").trim();
+      if (!ref) {
+        setToast("invoiceDocId олдсонгүй. API response-оо шалгаарай.");
+        return;
+      }
 
-  async function handleCheckPayment() {
-    if (!user || !orderId) {
-      setPayStatus("Order олдсонгүй. Дахин үүсгээд оролдоорой.");
-      return;
-    }
-
-    try {
-      setPayBusy(true);
-      setPayStatus("Төлбөр шалгаж байна…");
-      const idToken = await user.getIdToken();
-
-      const res = await fetch("/api/qpay/checkout/check", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ orderId }),
+      setQpayData({
+        ref,
+        qrImageDataUrl: data?.qrImageDataUrl ?? null,
+        shortUrl: data?.shortUrl ?? null,
+        urls: Array.isArray(data?.urls) ? (data.urls as Deeplink[]) : [],
       });
 
-      const data: any = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        setPayStatus(data?.message || data?.error || "Төлбөр шалгахад алдаа гарлаа.");
-        return;
-      }
-
-      if (data?.status === "PAID") {
-        setPayStatus("Төлбөр баталгаажлаа ✅ Курс нээгдлээ!");
-        setToast("✅ Төлбөр баталгаажлаа. Сургалт нээгдлээ!");
-       setBuyOpen(false);
-        router.refresh();
-      } else {
-        setPayStatus("Одоогоор төлбөр баталгаажаагүй байна. Дахин шалгана уу.");
-      }
+      setBuyOpen(true);
     } catch (e: any) {
-      setPayStatus(e?.message || "Шалгах үед алдаа гарлаа. Дахин оролдоно уу.");
-    } finally {
-      setPayBusy(false);
+      setToast(e?.message || "Алдаа гарлаа. Дахин оролдоно уу.");
     }
   }
 
@@ -935,9 +897,8 @@ export default function CoursePage() {
               <button
                 type="button"
                 onClick={() => {
-                  setBuyOpen(true);
-                  createCheckoutInvoice();
-                }}
+  createCheckoutInvoice();
+}}
                 className="
                   mt-3 w-full rounded-2xl
                   px-5 py-3
@@ -1197,10 +1158,9 @@ export default function CoursePage() {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setBuyOpen(true);
-                        createCheckoutInvoice();
-                      }}
+                     onClick={() => {
+  createCheckoutInvoice();
+}}
                       className="
                         w-full rounded-full
                         px-6 py-4
@@ -1233,12 +1193,18 @@ export default function CoursePage() {
       </div>
 
      {/* ✅ ГАНЦ ТӨЛБӨРИЙН UI MODAL */}
-<QPayCheckoutModal
+<QPayModal
   open={buyOpen}
   onClose={() => setBuyOpen(false)}
-  courseId={courseId}
-  title={course.title}
+  data={qpayData}
   amount={amount}
+  courseTitle={course.title}
+  courseThumbUrl={course.thumbnailUrl ?? null}
+  onPaid={() => {
+    setToast("✅ Төлбөр баталгаажлаа. Сургалт нээгдлээ!");
+    setBuyOpen(false);
+    router.refresh();
+  }}
 />
   </>
   );

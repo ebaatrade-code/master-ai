@@ -1,7 +1,7 @@
 // FILE: app/api/qpay/check/route.ts
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
-import { qpayCheckPaymentByInvoice } from "@/lib/qpay";
+import { qpayCheckInvoicePaid } from "@/lib/qpay";
 import * as admin from "firebase-admin";
 
 export const dynamic = "force-dynamic";
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
     const qpayInvoiceId = String(inv.qpayInvoiceId || "");
     if (!qpayInvoiceId) return jsonError("Invoice missing qpayInvoiceId", 500);
 
-    const chk = await qpayCheckPaymentByInvoice(qpayInvoiceId);
+    const chk = await qpayCheckInvoicePaid(qpayInvoiceId);
 
     if (chk.paid) {
       await finalizePurchaseIfNeeded(db, invoiceDocId);

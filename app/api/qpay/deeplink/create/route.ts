@@ -1,109 +1,85 @@
-// app/api/qpay/deeplink/create/route.ts
+// FILE: app/api/qpay/deeplink/create/route.ts
 import { NextResponse } from "next/server";
-import * as admin from "firebase-admin";
-import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
-import { qpayCreateInvoice } from "@/lib/qpay";
+import { qpayCreateInvoice, extractShortUrl, toDataUrlPng, type QPayInvoiceCreateReq } from "@/lib/qpay";
 
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-function getBearerToken(req: Request) {
-  const h = req.headers.get("authorization") || "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] || "";
+function noStoreJson(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-function envOrThrow(name: string) {
-  const v = String(process.env[name] ?? "").trim();
+function mustEnv(name: string) {
+  const v = process.env[name];
   if (!v) throw new Error(`Missing env: ${name}`);
   return v;
 }
 
+function isAmount(x: unknown): x is number {
+  return typeof x === "number" && Number.isFinite(x) && x > 0 && x < 1_000_000_000;
+}
+
 export async function POST(req: Request) {
   try {
-    // 1) Auth
-    const idToken = getBearerToken(req);
-    if (!idToken) {
-      return NextResponse.json(
-        { error: "Missing Authorization Bearer token" },
-        { status: 401 }
-      );
-    }
+    const siteUrl = mustEnv("SITE_URL");
+    const invoiceCode = mustEnv("QPAY_INVOICE_CODE");
+    const receiverCode = mustEnv("QPAY_INVOICE_RECEIVER_CODE");
+    const branchCode = process.env.QPAY_BRANCH_CODE || "ONLINE";
 
-    const decoded = await adminAuth().verifyIdToken(idToken);
-    const uid = decoded.uid;
+    const json = (await req.json().catch(() => null)) as
+      | { amount?: unknown; description?: unknown; orderId?: unknown; senderInvoiceNo?: unknown; courseId?: unknown; uid?: unknown }
+      | null;
 
-    // 2) Body
-    const body = (await req.json()) as { courseId: string; amount: number; title?: string };
-    const courseId = String(body?.courseId ?? "").trim();
-    const amount = Number(body?.amount);
+    if (!json) return noStoreJson({ error: "Invalid JSON" }, 400);
 
-    if (!courseId || !Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-    }
+    const amount = typeof json.amount === "string" ? Number(json.amount) : json.amount;
+    if (!isAmount(amount)) return noStoreJson({ error: "Invalid amount" }, 400);
 
-    // ✅ 3) invoice_code ENV-ээс
-    const invoiceCode = envOrThrow("QPAY_INVOICE_CODE");
+    const description = String(json.description ?? "Master AI payment").trim();
+    if (description.length < 2 || description.length > 140) return noStoreJson({ error: "Invalid description" }, 400);
 
-    // 4) Firestore order record
-    const db = adminDb();
+    const senderInvoiceNoRaw = String(json.senderInvoiceNo ?? json.orderId ?? Date.now());
+    const sender_invoice_no = senderInvoiceNoRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || String(Date.now());
 
-    // sender_invoice_no unique
-    const senderInvoiceNo = `MAI_${uid}_${courseId}_${Date.now()}`;
+    const orderId = String(json.orderId ?? sender_invoice_no).slice(0, 80);
 
-    const ref = db.collection("qpayPayments").doc();
-    await ref.set({
-      uid,
-      courseId,
+    const callback_url =
+      `${siteUrl.replace(/\/$/, "")}/api/qpay/callback` +
+      `?orderId=${encodeURIComponent(orderId)}` +
+      `&courseId=${encodeURIComponent(String(json.courseId ?? ""))}` +
+      `&uid=${encodeURIComponent(String(json.uid ?? ""))}`;
+
+    const payload: QPayInvoiceCreateReq = {
+      invoice_code: invoiceCode,
+      sender_invoice_no,
+      invoice_receiver_code: receiverCode,
+      sender_branch_code: branchCode,
+      invoice_description: description,
       amount,
-      status: "pending",
-      senderInvoiceNo,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+      callback_url,
+      allow_partial: false,
+      allow_exceed: false,
+      enable_expiry: "false",
+      minimum_amount: null,
+      maximum_amount: null,
+    };
 
-    // 5) callback url
-    const baseUrl = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
-    const callbackUrl = `${baseUrl}/api/qpay/callback?ref=${ref.id}`;
+    const inv = await qpayCreateInvoice(payload);
 
-    // 6) QPay invoice create
-    const invoice = await qpayCreateInvoice({
-      invoice_code: invoiceCode, // ✅ ЭНД MASTERAI_MN_INVOICE гэж БИЧИХГҮЙ
-      sender_invoice_no: senderInvoiceNo,
-      invoice_description: body.title ? `${body.title} төлбөр` : `Course ${courseId} төлбөр`,
+    return noStoreJson({
+      qpayInvoiceId: inv.invoice_id,
+      qrText: inv.qr_text ?? null,
+      qrImageBase64: inv.qr_image ?? null,
+      qrImageDataUrl: toDataUrlPng(inv.qr_image ?? null),
+      urls: Array.isArray(inv.urls) ? inv.urls : [],
+      shortUrl: extractShortUrl(inv.urls),
       amount,
-      callback_url: callbackUrl,
-      invoice_receiver_code: "terminal",
-      sender_branch_code: "MAIN",
-      // sender_staff_code: ❌ БИЧИХГҮЙ (type error өгнө)
-    });
-
-    // 7) Save invoice result
-    await ref.set(
-      {
-        invoiceId: invoice.invoice_id,
-        qpayShortUrl: invoice.qPay_shortUrl ?? null,
-        qrText: invoice.qr_text ?? null,
-        qrImageBase64: invoice.qr_image ?? null,
-        urls: invoice.urls ?? [],
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-
-    // 8) Return
-    return NextResponse.json({
-      orderId: ref.id,
-      invoiceId: invoice.invoice_id,
-      shortUrl: invoice.qPay_shortUrl ?? null,
-      qrText: invoice.qr_text ?? null,
-      qrImageBase64: invoice.qr_image ?? null,
-      urls: invoice.urls ?? [],
+      description,
+      senderInvoiceNo: sender_invoice_no,
+      orderId,
+      callbackUrl: callback_url,
     });
   } catch (e: any) {
-    console.error("QPAY deeplink/create error:", e);
-    return NextResponse.json(
-      { error: typeof e?.message === "string" ? e.message : "Server error" },
-      { status: 500 }
-    );
+    const msg = typeof e?.message === "string" ? e.message : "Server error";
+    return noStoreJson({ error: msg }, 500);
   }
 }
