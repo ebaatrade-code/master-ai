@@ -45,13 +45,18 @@ export default function QPayModal({
   const [status, setStatus] = useState<"idle" | "checking" | "paid">("idle");
   const [lastErr, setLastErr] = useState<string | null>(null);
 
-  // ✅ background scroll lock (mobile/iOS fix)
+  // ✅ Lock body scroll while modal open (mobile/iOS)
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
+    const prevOverflow = document.body.style.overflow;
+    const prevOverscroll = (document.body.style as any).overscrollBehaviorY;
+
     document.body.style.overflow = "hidden";
+    (document.body.style as any).overscrollBehaviorY = "contain";
+
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = prevOverflow;
+      (document.body.style as any).overscrollBehaviorY = prevOverscroll;
     };
   }, [open]);
 
@@ -65,6 +70,7 @@ export default function QPayModal({
     return null;
   }, [data?.qrImageDataUrl, data?.qr_image]);
 
+  // ✅ Poll check endpoint
   useEffect(() => {
     if (!open || !data?.ref) return;
 
@@ -129,14 +135,15 @@ export default function QPayModal({
 
   if (!open || !data) return null;
 
+  const bankUrls = Array.isArray(data.urls) ? data.urls : [];
+
   return (
     <div className="fixed inset-0 z-[1000]">
       {/* overlay */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      {/* ✅ MOBILE: no side padding, full screen | ✅ DESKTOP: centered */}
+      {/* ✅ MOBILE: full screen no padding | ✅ DESKTOP: centered */}
       <div className="absolute inset-0 flex items-stretch justify-stretch md:items-center md:justify-center p-0 md:p-4">
-        {/* ✅ modal */}
         <div
           className="
             w-screen h-[100dvh]
@@ -144,10 +151,9 @@ export default function QPayModal({
             rounded-none md:rounded-2xl
             bg-white shadow-2xl
             overflow-hidden
-            md:max-h-[calc(100vh-80px)]
           "
         >
-          {/* header (sticky on both) */}
+          {/* header sticky */}
           <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-white px-4 md:px-6 py-4 md:py-5">
             <div>
               <div className="text-[17px] md:text-[18px] font-semibold text-neutral-900">Төлбөр хүлээгдэж байна</div>
@@ -164,10 +170,17 @@ export default function QPayModal({
             </button>
           </div>
 
-          {/* ✅ BODY scroll: MOBILE + DESKTOP */}
-          <div className="overflow-y-auto overscroll-contain [webkit-overflow-scrolling:touch] max-h-[calc(100dvh-72px)] md:max-h-[calc(100vh-80px-88px)]">
+          {/* ✅ BODY scroll (both) */}
+          <div
+            className="
+              overflow-y-auto overscroll-contain
+              [-webkit-overflow-scrolling:touch]
+              h-[calc(100dvh-76px)]
+              md:h-auto md:max-h-[calc(100vh-140px)]
+            "
+          >
             <div className="grid grid-cols-1 gap-4 md:gap-6 p-4 md:p-6 md:grid-cols-2">
-              {/* LEFT: QR */}
+              {/* LEFT */}
               <div className="rounded-2xl border bg-white p-4 md:p-6">
                 <div className="text-[13px] font-medium text-neutral-700">QPay QR</div>
 
@@ -241,6 +254,32 @@ export default function QPayModal({
                     <div className="text-neutral-500">Нийт дүн</div>
                     <div className="font-semibold text-neutral-900">{formatMnt(amount)}₮</div>
                   </div>
+                </div>
+
+                {/* ✅ MOBILE ONLY: bank deeplinks */}
+                <div className="rounded-2xl border bg-white p-4 md:p-6 md:hidden">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[13px] font-medium text-neutral-700">Банкны апп-аар төлөх</div>
+                    <div className="text-[12px] text-neutral-500">Mobile</div>
+                  </div>
+
+                  {bankUrls.length ? (
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      {bankUrls.slice(0, 12).map((u, idx) => (
+                        <a
+                          key={`${u.link}-${idx}`}
+                          href={u.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-xl bg-neutral-100 hover:bg-neutral-200 px-3 py-2 text-[13px] text-neutral-700"
+                        >
+                          {u.name || "Bank"}
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-[13px] text-neutral-500">Bank deeplink олдсонгүй.</div>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border bg-white p-4 md:p-6">

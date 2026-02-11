@@ -166,7 +166,15 @@ export async function POST(req: NextRequest) {
     const qpayInvoiceId = pickString(inv, ["invoice_id", "invoiceId"]);
     const qrText = pickString(inv, ["qr_text", "qrText", "qr_string", "qrString"]);
     const qrImageBase64 = pickString(inv, ["qr_image", "qrImage"]);
-    const urls = Array.isArray(inv?.urls) ? inv.urls : [];
+    // 🔥 QPay deeplink array-г олон боломжит key-с шалгана
+const urls =
+  Array.isArray(inv?.urls)
+    ? inv.urls
+    : Array.isArray(inv?.payment_urls)
+    ? inv.payment_urls
+    : Array.isArray(inv?.deeplinks)
+    ? inv.deeplinks
+    : [];
 
     // ✅ FIX: shortUrl-оо QPay response дээрээс зөв олно
     const shortUrl =
