@@ -225,7 +225,7 @@ export default function CoursePage() {
   const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
   const [isExpired, setIsExpired] = useState(false);
 
-   // ✅ QPAY MODAL (single)
+  // ✅ QPAY MODAL (single)
   const [buyOpen, setBuyOpen] = useState(false);
   const [qpayData, setQpayData] = useState<{
     ref: string; // qpayPayments docId
@@ -233,6 +233,10 @@ export default function CoursePage() {
     qr_image?: string | null;
     shortUrl?: string | null;
     urls?: Deeplink[];
+
+    // ✅ NEW: Duration to show in modal instead of "Контент"
+    durationLabel?: string | null;
+    durationDays?: number | null;
   } | null>(null);
 
   const amount = useMemo(() => Number(course?.price ?? 0), [course?.price]);
@@ -243,7 +247,7 @@ export default function CoursePage() {
     return false;
   }
 
-    async function createCheckoutInvoice() {
+  async function createCheckoutInvoice() {
     if (!guardLogin()) return;
     if (!courseId) return;
 
@@ -251,6 +255,19 @@ export default function CoursePage() {
       setToast("Үнэ буруу байна. Admin дээр course price-аа шалгаарай.");
       return;
     }
+
+    // ✅ NEW: modal дээр харуулах хугацааг эндээс тодорхойлно
+    const modalDurationLabel =
+      String(course?.durationLabel ?? "").trim() ||
+      String(course?.duration ?? "").trim() ||
+      (Number.isFinite(Number(course?.durationDays)) && Number(course?.durationDays) > 0
+        ? `${Number(course?.durationDays)} хоногоор`
+        : "30 хоногоор");
+
+    const modalDurationDays =
+      Number.isFinite(Number(course?.durationDays)) && Number(course?.durationDays) > 0
+        ? Number(course?.durationDays)
+        : null;
 
     try {
       setQpayData(null);
@@ -289,6 +306,10 @@ export default function CoursePage() {
         qrImageDataUrl: data?.qrImageDataUrl ?? null,
         shortUrl: data?.shortUrl ?? null,
         urls: Array.isArray(data?.urls) ? (data.urls as Deeplink[]) : [],
+
+        // ✅ NEW: pass duration to QPayModal
+        durationLabel: modalDurationLabel,
+        durationDays: modalDurationDays,
       });
 
       setBuyOpen(true);
@@ -837,7 +858,6 @@ export default function CoursePage() {
 
   // =========================================================
   // ✅ NOT PURCHASED VIEW
-  // ✅ BUY -> Course дээрээс ШУУД “ганц” төлбөрийн modal
   // =========================================================
   return (
     <>
@@ -897,8 +917,8 @@ export default function CoursePage() {
               <button
                 type="button"
                 onClick={() => {
-  createCheckoutInvoice();
-}}
+                  createCheckoutInvoice();
+                }}
                 className="
                   mt-3 w-full rounded-2xl
                   px-5 py-3
@@ -1158,9 +1178,9 @@ export default function CoursePage() {
 
                     <button
                       type="button"
-                     onClick={() => {
-  createCheckoutInvoice();
-}}
+                      onClick={() => {
+                        createCheckoutInvoice();
+                      }}
                       className="
                         w-full rounded-full
                         px-6 py-4
@@ -1192,20 +1212,20 @@ export default function CoursePage() {
         </div>
       </div>
 
-     {/* ✅ ГАНЦ ТӨЛБӨРИЙН UI MODAL */}
-<QPayModal
-  open={buyOpen}
-  onClose={() => setBuyOpen(false)}
-  data={qpayData}
-  amount={amount}
-  courseTitle={course.title}
-  courseThumbUrl={course.thumbnailUrl ?? null}
-  onPaid={() => {
-    setToast("✅ Төлбөр баталгаажлаа. Сургалт нээгдлээ!");
-    setBuyOpen(false);
-    router.refresh();
-  }}
-/>
-  </>
+      {/* ✅ ГАНЦ ТӨЛБӨРИЙН UI MODAL */}
+      <QPayModal
+        open={buyOpen}
+        onClose={() => setBuyOpen(false)}
+        data={qpayData}
+        amount={amount}
+        courseTitle={course.title}
+        courseThumbUrl={course.thumbnailUrl ?? null}
+        onPaid={() => {
+          setToast("✅ Төлбөр баталгаажлаа. Сургалт нээгдлээ!");
+          setBuyOpen(false);
+          router.refresh();
+        }}
+      />
+    </>
   );
 }

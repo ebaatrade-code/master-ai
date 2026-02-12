@@ -1,6 +1,9 @@
+// FILE: app/api/qpay/checkout/check/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
 import * as admin from "firebase-admin";
+
+export const runtime = "nodejs";
 
 type Body = { ref: string };
 
@@ -69,8 +72,6 @@ async function qpayCheckInvoicePaid(invoiceId: string) {
   const baseUrl = envOrThrow("QPAY_BASE_URL").replace(/\/+$/, "");
   const accessToken = await getQPayAccessToken();
 
-  // QPay дээр хамгийн түгээмэл ашиглагддаг endpoint:
-  // POST /v2/payment/check  { object_type:"INVOICE", object_id:"..." }
   const res = await fetch(`${baseUrl}/v2/payment/check`, {
     method: "POST",
     headers: {
@@ -93,13 +94,9 @@ async function qpayCheckInvoicePaid(invoiceId: string) {
     return { ok: false, paid: false, status: "ERROR", detail: data };
   }
 
-  // Paid гэж үзэх олон хувилбар
-  const status =
-    String(data?.payment_status || data?.status || data?.invoice_status || "").toUpperCase();
-
+  const status = String(data?.payment_status || data?.status || data?.invoice_status || "").toUpperCase();
   const paidAmount = Number(data?.paid_amount ?? data?.paidAmount ?? 0);
 
-  // Зарим response "rows" массивтай байдаг
   const rows = Array.isArray(data?.rows) ? data.rows : Array.isArray(data?.payments) ? data.payments : [];
   const anyRowPaid = rows.some((r: any) => String(r?.payment_status || r?.status || "").toUpperCase() === "PAID");
 
@@ -145,8 +142,18 @@ export async function POST(req: NextRequest) {
     if (!courseId) return jsonError("courseId missing in payment doc", 400);
     if (!invoiceId) return jsonError("qpayInvoiceId missing in payment doc", 400);
 
+    const invRef = db.collection("invoices").doc(ref);
+
     // already paid
     if (pay?.paid === true || String(pay?.status || "").toLowerCase() === "paid") {
+      await invRef.set(
+        {
+          status: "PAID",
+          paidAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
       return NextResponse.json({ ok: true, paid: true, status: "PAID" }, { status: 200 });
     }
 
@@ -161,15 +168,13 @@ export async function POST(req: NextRequest) {
 
     if (!check.paid) {
       // still pending
-      await payRef.set(
-        { status: "pending", updatedAt: new Date() },
-        { merge: true }
-      );
+      await payRef.set({ status: "pending", updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      await invRef.set({ status: "PENDING", updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+
       return NextResponse.json({ ok: true, paid: false, status: "PENDING" }, { status: 200 });
     }
 
     // 5) mark paid + grant course
-    // read course duration
     const courseSnap = await db.collection("courses").doc(courseId).get();
     let durationDays = 30;
     let durationLabel = "30 хоног";
@@ -182,7 +187,10 @@ export async function POST(req: NextRequest) {
         const parsed = parseDurationToDays(c?.durationLabel) ?? parseDurationToDays(c?.duration);
         if (parsed && parsed > 0) durationDays = parsed;
       }
-      durationLabel = String(c?.durationLabel || "").trim() || String(c?.duration || "").trim() || `${durationDays} хоног`;
+      durationLabel =
+        String(c?.durationLabel || "").trim() ||
+        String(c?.duration || "").trim() ||
+        `${durationDays} хоног`;
     }
 
     const nowMs = Date.now();
@@ -193,18 +201,16 @@ export async function POST(req: NextRequest) {
       {
         paid: true,
         status: "paid",
-        paidAt: new Date(),
-        updatedAt: new Date(),
+        paidAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         checkStatus: check.status,
-        checkedAt: new Date(),
+        checkedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
 
     // update user doc (unlock course)
     const userRef = db.collection("users").doc(decoded.uid);
-    await userRef.set({ updatedAt: new Date() }, { merge: true });
-
     await userRef.set(
       {
         purchasedCourseIds: admin.firestore.FieldValue.arrayUnion(courseId),
@@ -219,6 +225,16 @@ export async function POST(req: NextRequest) {
             qpayInvoiceId: invoiceId,
           },
         },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // ✅ update invoices history
+    await invRef.set(
+      {
+        status: "PAID",
+        paidAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
