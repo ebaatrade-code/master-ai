@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/components/AuthProvider";
 import { db } from "@/lib/firebase";
 import {
@@ -19,31 +19,33 @@ import {
 type InvoiceRow = {
   id: string;
   uid: string;
+
   courseId?: string;
   courseTitle?: string;
   courseThumbUrl?: string | null;
+
   amount?: number;
   status?: "PENDING" | "PAID" | "CANCELLED" | "EXPIRED" | string;
+
+  durationLabel?: string | null;
+  durationDays?: number | null;
+
   createdAt?: any;
   paidAt?: any;
-  updatedAt?: any;
   qpay?: any;
 };
 
-type UserPurchase = {
-  purchasedAt?: any;
-  expiresAt?: any;
-  durationDays?: number;
-  durationLabel?: string;
-  amount?: number;
-  invoiceRef?: string;
-  qpayInvoiceId?: string;
-};
+type PurchasedCourseRow = {
+  courseId: string;
+  title: string;
+  thumbUrl: string | null;
 
-type CourseInfo = {
-  id: string;
-  title?: string;
-  thumbnailUrl?: string | null;
+  purchasedAt?: any; // Timestamp | number | string
+  expiresAt?: any; // Timestamp | number | string
+
+  amount?: number;
+  durationLabel?: string | null;
+  durationDays?: number | null;
 };
 
 function money(n?: number) {
@@ -51,35 +53,61 @@ function money(n?: number) {
   return Number.isFinite(v) ? v.toLocaleString("mn-MN") + "₮" : "0₮";
 }
 
-function fmt(ts: any) {
+function toDateSafe(ts: any): Date | null {
   try {
-    const d =
-      ts instanceof Timestamp
-        ? ts.toDate()
-        : ts?.toDate
-        ? ts.toDate()
-        : ts
-        ? new Date(ts)
-        : null;
-    if (!d || Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleString("mn-MN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    if (!ts) return null;
+    if (ts instanceof Timestamp) return ts.toDate();
+    if (typeof ts?.toDate === "function") return ts.toDate();
+    if (typeof ts === "number") {
+      const d = new Date(ts);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof ts === "string") {
+      const d = new Date(ts);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (ts?.seconds != null && ts?.nanoseconds != null) {
+      const ms = ts.seconds * 1000 + Math.floor(ts.nanoseconds / 1e6);
+      const d = new Date(ms);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return null;
   } catch {
-    return "—";
+    return null;
   }
+}
+
+function fmt(ts: any) {
+  const d = toDateSafe(ts);
+  if (!d) return "—";
+  return d.toLocaleString("mn-MN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// ✅ expire огноог тусад нь харагдах хэлбэрээр (өдөр/цагтай)
+function fmtExpire(ts: any) {
+  const d = toDateSafe(ts);
+  if (!d) return "—";
+  return d.toLocaleString("mn-MN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function badge(status?: string) {
   const s = (status ?? "").toUpperCase();
-  if (s === "PAID")
-    return "bg-emerald-500/15 text-emerald-300 border-emerald-500/25";
-  if (s === "PENDING")
-    return "bg-amber-500/15 text-amber-200 border-amber-500/25";
+  if (s === "PAID") return "bg-emerald-500/15 text-emerald-300 border-emerald-500/25";
+  if (s === "PENDING") return "bg-amber-500/15 text-amber-200 border-amber-500/25";
+  if (s === "CANCELLED") return "bg-white/10 text-white/60 border-white/15";
+  if (s === "EXPIRED") return "bg-white/10 text-white/60 border-white/15";
   return "bg-white/10 text-white/70 border-white/15";
 }
 
@@ -92,19 +120,49 @@ function label(status?: string) {
   return status ?? "Тодорхойгүй";
 }
 
+function durationText(durationLabel?: string | null, durationDays?: number | null) {
+  const lbl = String(durationLabel ?? "").trim();
+  if (lbl) return lbl;
+  const dd = Number(durationDays ?? 0);
+  if (Number.isFinite(dd) && dd > 0) return `${dd} хоногоор`;
+  return "—";
+}
+
+// ✅ expiresAt байхгүй үед purchasedAt + durationDays-аар автоматаар тооцно
+function computeExpiresAt(purchasedAt: any, expiresAt: any, durationDays?: number | null) {
+  const ex = toDateSafe(expiresAt);
+  if (ex) return ex;
+
+  const p = toDateSafe(purchasedAt);
+  const dd = Number(durationDays ?? 0);
+
+  if (p && Number.isFinite(dd) && dd > 0) {
+    const ms = p.getTime() + dd * 24 * 60 * 60 * 1000;
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+// ✅ expired эсэхийг "тооцоолсон expires" дээр тулгуурлана
+function isExpiredBy(purchasedAt: any, expiresAt: any, durationDays?: number | null) {
+  const ex = computeExpiresAt(purchasedAt, expiresAt, durationDays);
+  if (!ex) return false; // огт тооцоолж болохгүй бол "дуусаагүй" гэж үзье
+  return ex.getTime() <= Date.now();
+}
+
 export default function PurchasesPage() {
   const { user, loading } = useAuth();
 
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
-  // ✅ Purchased courses section (from users/{uid}.purchases)
-  const [purchased, setPurchased] = useState<
-    Array<{ courseId: string; purchasedAt?: any; meta?: UserPurchase }>
-  >([]);
-  const [courseMap, setCourseMap] = useState<Record<string, CourseInfo>>({});
+  const [purchased, setPurchased] = useState<PurchasedCourseRow[]>([]);
+  const [pErr, setPErr] = useState<string | null>(null);
 
-  // 1) Listen invoices (history)
+  // =========================
+  // 1) Invoices (history)
+  // =========================
   useEffect(() => {
     if (loading) return;
     if (!user?.uid) return;
@@ -132,111 +190,102 @@ export default function PurchasesPage() {
     return () => unsub();
   }, [user?.uid, loading]);
 
-  // 2) Listen user purchases map
+  // =========================
+  // 2) Purchased courses (from user.purchases map)
+  // =========================
   useEffect(() => {
     if (loading) return;
     if (!user?.uid) return;
 
-    const ref = doc(db, "users", user.uid);
+    let alive = true;
+    setPErr(null);
 
-    const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        const data = snap.data() as any;
-        const purchases: Record<string, UserPurchase> = data?.purchases || {};
+    (async () => {
+      try {
+        const uref = doc(db, "users", user.uid);
+        const usnap = await getDoc(uref);
+        if (!alive) return;
 
-        const list = Object.entries(purchases).map(([courseId, meta]) => ({
-          courseId,
-          purchasedAt: (meta as any)?.purchasedAt,
-          meta,
-        }));
+        const u = usnap.exists() ? (usnap.data() as any) : {};
+        const purchasesMap = u?.purchases && typeof u.purchases === "object" ? u.purchases : {};
+        const courseIds = Object.keys(purchasesMap);
 
-        // sort desc by purchasedAt
-        list.sort((a, b) => {
-          const aMs =
-            a.purchasedAt instanceof Timestamp
-              ? a.purchasedAt.toMillis()
-              : a.purchasedAt?.toDate
-              ? a.purchasedAt.toDate().getTime()
-              : a.purchasedAt
-              ? new Date(a.purchasedAt).getTime()
-              : 0;
+        if (!courseIds.length) {
+          setPurchased([]);
+          return;
+        }
 
-          const bMs =
-            b.purchasedAt instanceof Timestamp
-              ? b.purchasedAt.toMillis()
-              : b.purchasedAt?.toDate
-              ? b.purchasedAt.toDate().getTime()
-              : b.purchasedAt
-              ? new Date(b.purchasedAt).getTime()
-              : 0;
+        const courseDocs = await Promise.all(
+          courseIds.map(async (cid) => {
+            try {
+              const csnap = await getDoc(doc(db, "courses", cid));
+              const c = csnap.exists() ? (csnap.data() as any) : null;
+              return { courseId: cid, course: c };
+            } catch {
+              return { courseId: cid, course: null as any };
+            }
+          })
+        );
 
-          return bMs - aMs;
+        const merged: PurchasedCourseRow[] = courseIds.map((cid) => {
+          const p = purchasesMap?.[cid] || {};
+          const c = courseDocs.find((x) => x.courseId === cid)?.course;
+
+          const title =
+            String(c?.title || "").trim() ||
+            String(p?.courseTitle || "").trim() ||
+            `Course: ${cid}`;
+
+          const thumbUrl =
+            (typeof c?.thumbnailUrl === "string" && c.thumbnailUrl.trim())
+              ? c.thumbnailUrl.trim()
+              : (typeof c?.thumbUrl === "string" && c.thumbUrl.trim())
+              ? c.thumbUrl.trim()
+              : (typeof p?.courseThumbUrl === "string" && p.courseThumbUrl.trim())
+              ? p.courseThumbUrl.trim()
+              : null;
+
+          return {
+            courseId: cid,
+            title,
+            thumbUrl,
+            purchasedAt: p?.purchasedAt,
+            expiresAt: p?.expiresAt,
+            amount: Number(p?.amount ?? 0) || undefined,
+            durationLabel: (p?.durationLabel ?? null) as any,
+            durationDays: (p?.durationDays ?? null) as any,
+          };
         });
 
-        setPurchased(list);
-      },
-      (e) => {
-        console.warn("[purchases user doc] error:", e);
+        // newest first
+        merged.sort((a, b) => {
+          const da = toDateSafe(a.purchasedAt)?.getTime() ?? 0;
+          const dbb = toDateSafe(b.purchasedAt)?.getTime() ?? 0;
+          return dbb - da;
+        });
+
+        setPurchased(merged);
+      } catch (e: any) {
+        setPErr(typeof e?.message === "string" ? e.message : "Алдаа гарлаа");
       }
-    );
-
-    return () => unsub();
-  }, [user?.uid, loading]);
-
-  // 3) Fetch course info for purchased list (title + thumbnail)
-  useEffect(() => {
-    if (!user?.uid) return;
-    if (!purchased.length) return;
-
-    let cancelled = false;
-
-    const load = async () => {
-      const missing = purchased
-        .map((p) => p.courseId)
-        .filter((id) => id && !courseMap[id]);
-
-      if (!missing.length) return;
-
-      const next: Record<string, CourseInfo> = {};
-      await Promise.all(
-        missing.map(async (courseId) => {
-          try {
-            const cs = await getDoc(doc(db, "courses", courseId));
-            if (!cs.exists()) {
-              next[courseId] = { id: courseId, title: `Course: ${courseId}` };
-              return;
-            }
-            const c = cs.data() as any;
-            next[courseId] = {
-              id: courseId,
-              title: String(c?.title || "").trim() || `Course: ${courseId}`,
-              thumbnailUrl: (c?.thumbnailUrl as string) || null,
-            };
-          } catch {
-            next[courseId] = { id: courseId, title: `Course: ${courseId}` };
-          }
-        })
-      );
-
-      if (cancelled) return;
-      setCourseMap((prev) => ({ ...prev, ...next }));
-    };
-
-    load();
+    })();
 
     return () => {
-      cancelled = true;
+      alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [purchased]);
+  }, [user?.uid, loading]);
 
-  // ✅ ONLY pending rows shown in "history"
-  const pendingRows = useMemo(() => {
-    return rows.filter((r) => String(r.status ?? "").toUpperCase() === "PENDING");
+  // =========================
+  // Derived lists
+  // =========================
+  // ✅ “Худалдан авалтын түүх” дотор PAID-г харуулахгүй
+  const historyRows = useMemo(() => {
+    return rows.filter((r) => String(r.status ?? "").toUpperCase() !== "PAID");
   }, [rows]);
 
-  const pendingCount = useMemo(() => pendingRows.length, [pendingRows]);
+  const pendingCount = useMemo(() => {
+    return historyRows.filter((r) => String(r.status).toUpperCase() === "PENDING").length;
+  }, [historyRows]);
 
   if (loading) {
     return (
@@ -262,7 +311,6 @@ export default function PurchasesPage() {
             <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
               Худалдан авалтын түүх
             </h1>
-            {/* ✅ removed the subtitle line per request */}
           </div>
 
           {pendingCount > 0 && (
@@ -272,35 +320,43 @@ export default function PurchasesPage() {
           )}
         </div>
 
-        {/* ======================================================
-            ✅ 1) PENDING HISTORY (TOP) — ONLY PENDING
-        ====================================================== */}
+        {/* =========================================================
+            1) History (PAID биш зүйлс)
+        ========================================================= */}
         <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
-          {/* ✅ removed "(төлөгдөөгүй)" label */}
-          <div className="text-sm font-semibold text-white/90">
-            Худалдан авалтын түүх
-          </div>
-
           {err && (
-            <div className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-200">
+            <div className="mb-3 rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-200">
               {err}
             </div>
           )}
 
-          {pendingRows.length === 0 ? (
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-white/85">
+              Худалдан авалтын түүх
+            </div>
+            <div className="text-xs text-white/45">
+              {historyRows.length ? `${historyRows.length} бичлэг` : ""}
+            </div>
+          </div>
+
+          {historyRows.length === 0 ? (
             <div className="py-8 text-center text-white/60">
-              Одоогоор хүлээгдэж буй төлбөр байхгүй байна.
+              Одоогоор худалдан авалтын түүх байхгүй байна.
             </div>
           ) : (
-            <div className="mt-3 space-y-3">
-              {pendingRows.map((r) => {
+            <div className="space-y-3">
+              {historyRows.map((r) => {
                 const st = String(r.status ?? "").toUpperCase();
                 const canContinue = st === "PENDING";
 
+                // ✅ Pending үед он сар биш "хугацаа" харуулна
+                const metaText =
+                  st === "PENDING"
+                    ? durationText(r.durationLabel ?? null, r.durationDays ?? null)
+                    : fmt(r.createdAt);
+
                 const thumb = (r.courseThumbUrl || "").trim();
-                const title =
-                  (r.courseTitle || "").trim() ||
-                  (r.courseId ? `Course: ${r.courseId}` : "Course");
+                const hasThumb = Boolean(thumb);
 
                 return (
                   <div
@@ -308,27 +364,29 @@ export default function PurchasesPage() {
                     className="rounded-2xl border border-white/10 bg-white/5 p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex gap-3">
-                        {/* thumbnail */}
-                        <div className="h-12 w-12 overflow-hidden rounded-xl bg-white/10 shrink-0">
-                          {thumb ? (
-                            <Image
-                              src={thumb}
-                              alt={title}
-                              width={48}
-                              height={48}
-                              className="h-12 w-12 object-cover"
-                            />
-                          ) : null}
+                      <div className="min-w-0 flex items-start gap-3">
+                        <div className="shrink-0">
+                          <div className="h-11 w-11 overflow-hidden rounded-xl bg-white/10">
+                            {hasThumb ? (
+                              <Image
+                                src={thumb}
+                                alt={r.courseTitle || "Course"}
+                                width={44}
+                                height={44}
+                                className="h-11 w-11 object-cover"
+                              />
+                            ) : (
+                              <div className="h-11 w-11" />
+                            )}
+                          </div>
                         </div>
 
                         <div className="min-w-0">
-                          {/* ✅ TITLE BIG TOP */}
-                          <div className="truncate text-[15px] sm:text-[16px] font-extrabold text-white/95">
-                            {title}
+                          <div className="truncate text-[15px] sm:text-[16px] font-bold text-white/90">
+                            {r.courseTitle?.trim() ||
+                              (r.courseId ? `Course: ${r.courseId}` : "—")}
                           </div>
 
-                          {/* ✅ under title: #ID + status badge */}
                           <div className="mt-1 flex items-center gap-2">
                             <div className="text-xs text-white/55">
                               #{r.id.slice(0, 8).toUpperCase()}
@@ -343,8 +401,8 @@ export default function PurchasesPage() {
                             </span>
                           </div>
 
-                          <div className="mt-1 text-xs text-white/45">
-                            {fmt(r.createdAt)}
+                          <div className="mt-1 text-xs text-white/55">
+                            {metaText}
                           </div>
                         </div>
                       </div>
@@ -359,7 +417,9 @@ export default function PurchasesPage() {
                           >
                             Төлбөр үргэлжлүүлэх
                           </Link>
-                        ) : null}
+                        ) : (
+                          <div className="mt-2 text-xs text-white/45">—</div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -367,69 +427,97 @@ export default function PurchasesPage() {
               })}
             </div>
           )}
-          {/* ✅ removed the bottom helper text per request */}
         </div>
 
-        {/* ======================================================
-            ✅ 2) PURCHASED COURSES (BOTTOM)
-        ====================================================== */}
+        {/* =========================================================
+            2) Purchased Courses (user.purchases)
+        ========================================================= */}
         <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-white/90">
+          {pErr && (
+            <div className="mb-3 rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-200">
+              {pErr}
+            </div>
+          )}
+
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-white/85">
               Худалдаж авсан хичээлүүд
             </div>
-            <div className="text-xs text-white/50">
-              {purchased.length ? `${purchased.length} хичээл` : "—"}
+            <div className="text-xs text-white/45">
+              {purchased.length ? `${purchased.length} хичээл` : ""}
             </div>
           </div>
 
           {purchased.length === 0 ? (
             <div className="py-8 text-center text-white/60">
-              Одоогоор худалдан авсан хичээл байхгүй байна.
+              Одоогоор худалдаж авсан хичээл алга байна.
             </div>
           ) : (
-            <div className="mt-3 space-y-3">
-              {purchased.map((p) => {
-                const info = courseMap[p.courseId];
-                const title =
-                  (info?.title || "").trim() || `Course: ${p.courseId}`;
-                const thumb = (info?.thumbnailUrl || "").trim();
+            <div className="space-y-3">
+              {purchased.map((c) => {
+                const ex = computeExpiresAt(c.purchasedAt, c.expiresAt, c.durationDays ?? null);
+                const expired = isExpiredBy(c.purchasedAt, c.expiresAt, c.durationDays ?? null);
+                const dur = durationText(c.durationLabel ?? null, c.durationDays ?? null);
 
                 return (
                   <div
-                    key={p.courseId}
+                    key={c.courseId}
                     className="rounded-2xl border border-white/10 bg-white/5 p-4"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex items-center gap-3">
-                        <div className="h-12 w-12 overflow-hidden rounded-xl bg-white/10 shrink-0">
-                          {thumb ? (
-                            <Image
-                              src={thumb}
-                              alt={title}
-                              width={48}
-                              height={48}
-                              className="h-12 w-12 object-cover"
-                            />
-                          ) : null}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex items-start gap-3">
+                        <div className="shrink-0">
+                          <div className="h-11 w-11 overflow-hidden rounded-xl bg-white/10">
+                            {c.thumbUrl ? (
+                              <Image
+                                src={c.thumbUrl}
+                                alt={c.title}
+                                width={44}
+                                height={44}
+                                className="h-11 w-11 object-cover"
+                              />
+                            ) : (
+                              <div className="h-11 w-11" />
+                            )}
+                          </div>
                         </div>
 
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-white/90">
-                            {title}
+                          <div className="truncate text-[15px] sm:text-[16px] font-bold text-white/90">
+                            {c.title}
                           </div>
+
                           <div className="mt-1 text-xs text-white/55">
-                            Нээсэн цаг: {fmt(p.purchasedAt)}
+                            Нээсэн цаг: {fmt(c.purchasedAt)}
                           </div>
+
+                          <div className="mt-1 text-xs text-white/40">
+                            {dur}
+                          </div>
+
+                          {/* ✅ expired үед дууссан огноог тодорхой харуулна */}
+                          {expired && (
+                            <div className="mt-1 text-xs text-white/45">
+                              Дууссан огноо: {ex ? fmtExpire(ex) : "—"}
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      <Link
-                        href={`/course/${p.courseId}`}
-                        className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs hover:bg-white/15 transition shrink-0"
-                      >
-                        Сургалт руу очих
-                      </Link>
+                      <div className="text-right shrink-0">
+                        {expired ? (
+                          <span className="inline-flex items-center rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs text-white/70">
+                            Хугацаа дууссан
+                          </span>
+                        ) : (
+                          <Link
+                            href={`/course/${c.courseId}`}
+                            className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs hover:bg-white/15 transition"
+                          >
+                            Сургалт руу очих
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

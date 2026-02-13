@@ -144,37 +144,61 @@ export async function POST(req: NextRequest) {
 
     const invRef = db.collection("invoices").doc(ref);
 
-    // already paid
-    if (pay?.paid === true || String(pay?.status || "").toLowerCase() === "paid") {
-      await invRef.set(
+    // ✅ DOUBLE-GRANT хамгаалалт: нэгэнт grant хийгдсэн бол дахиж юу ч бүү хий
+    const alreadyGranted = pay?.granted === true || !!pay?.grantedAt;
+    if (alreadyGranted) {
+      return NextResponse.json({ ok: true, paid: true, status: "PAID", granted: true }, { status: 200 });
+    }
+
+    // already paid flag байсан ч grant хийгдээгүй байж болно -> дараах flow-оор нэг удаа grant хийнэ
+    const alreadyPaid = pay?.paid === true || String(pay?.status || "").toLowerCase() === "paid";
+
+    // 4) check qpay (хэрвээ alreadyPaid биш бол л шалгана)
+    let isPaidNow = alreadyPaid;
+
+    if (!isPaidNow) {
+      const check = await qpayCheckInvoicePaid(invoiceId);
+      if (!check.ok) {
+        return NextResponse.json(
+          { ok: false, paid: false, status: "ERROR", message: "QPay check failed", detail: check.detail },
+          { status: 400 }
+        );
+      }
+
+      if (!check.paid) {
+        // still pending
+        await payRef.set(
+          {
+            status: "pending",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastClientCheckAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        await invRef.set(
+          { status: "PENDING", updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+
+        return NextResponse.json({ ok: true, paid: false, status: "PENDING" }, { status: 200 });
+      }
+
+      isPaidNow = true;
+
+      // paid болсон тохиолдолд pay doc-д эхлээд paid гэж тэмдэглэнэ (grant-г transaction дотор хийж дуусгана)
+      await payRef.set(
         {
-          status: "PAID",
+          paid: true,
+          status: "paid",
           paidAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          checkedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
-      return NextResponse.json({ ok: true, paid: true, status: "PAID" }, { status: 200 });
     }
 
-    // 4) check qpay
-    const check = await qpayCheckInvoicePaid(invoiceId);
-    if (!check.ok) {
-      return NextResponse.json(
-        { ok: false, paid: false, status: "ERROR", message: "QPay check failed", detail: check.detail },
-        { status: 400 }
-      );
-    }
-
-    if (!check.paid) {
-      // still pending
-      await payRef.set({ status: "pending", updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-      await invRef.set({ status: "PENDING", updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-
-      return NextResponse.json({ ok: true, paid: false, status: "PENDING" }, { status: 200 });
-    }
-
-    // 5) mark paid + grant course
+    // 5) grant хийхэд хэрэгтэй course duration-г урьдчилж уншина
     const courseSnap = await db.collection("courses").doc(courseId).get();
     let durationDays = 30;
     let durationLabel = "30 хоног";
@@ -193,54 +217,72 @@ export async function POST(req: NextRequest) {
         `${durationDays} хоног`;
     }
 
-    const nowMs = Date.now();
-    const expiresAt = admin.firestore.Timestamp.fromMillis(nowMs + durationDays * 24 * 60 * 60 * 1000);
+    const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + durationDays * 24 * 60 * 60 * 1000);
 
-    // update payment doc
-    await payRef.set(
-      {
-        paid: true,
-        status: "paid",
-        paidAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        checkStatus: check.status,
-        checkedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    // ✅ DOUBLE-GRANT хамгаалалт: Transaction дотор pay.granted шалгаад 1 удаа л grant хийх
+    await db.runTransaction(async (tx) => {
+      const freshPaySnap = await tx.get(payRef);
+      if (!freshPaySnap.exists) return;
 
-    // update user doc (unlock course)
-    const userRef = db.collection("users").doc(decoded.uid);
-    await userRef.set(
-      {
+      const freshPay = freshPaySnap.data() as any;
+      const freshGranted = freshPay?.granted === true || !!freshPay?.grantedAt;
+
+      // аль хэдийн grant хийгдсэн бол юу ч хийхгүй
+      if (freshGranted) return;
+
+      // user doc update (overwrite хийхгүй, DOT path update ашиглана)
+      const userRef = db.collection("users").doc(decoded.uid);
+
+      // doc байхгүй бол update fail болдог тул эхлээд merge-set
+      tx.set(
+        userRef,
+        { updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+
+      tx.update(userRef, {
         purchasedCourseIds: admin.firestore.FieldValue.arrayUnion(courseId),
-        purchases: {
-          [courseId]: {
-            purchasedAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt,
-            durationDays,
-            durationLabel,
-            amount,
-            invoiceRef: ref,
-            qpayInvoiceId: invoiceId,
-          },
+        [`purchases.${courseId}`]: {
+          purchasedAt: admin.firestore.FieldValue.serverTimestamp(),
+          expiresAt,
+          durationDays,
+          durationLabel,
+          amount,
+          invoiceRef: ref,
+          qpayInvoiceId: invoiceId,
         },
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+      });
 
-    // ✅ update invoices history
-    await invRef.set(
-      {
-        status: "PAID",
-        paidAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+      // invoices history update
+      tx.set(
+        invRef,
+        {
+          uid: decoded.uid,
+          courseId,
+          amount,
+          status: "PAID",
+          paidAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-    return NextResponse.json({ ok: true, paid: true, status: "PAID" }, { status: 200 });
+      // mark granted (idempotency flag)
+      tx.set(
+        payRef,
+        {
+          paid: true,
+          status: "paid",
+          granted: true,
+          grantedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+
+    return NextResponse.json({ ok: true, paid: true, status: "PAID", granted: true }, { status: 200 });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "Unknown error";
     return NextResponse.json({ ok: false, message: msg }, { status: 500 });

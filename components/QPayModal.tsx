@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -35,6 +35,20 @@ function formatDuration(durationLabel?: string | null, durationDays?: number | n
   const days = typeof durationDays === "number" && durationDays > 0 ? durationDays : null;
   if (days) return `${days} хоногоор`;
   return "—";
+}
+
+/** ✅ backoff schedule */
+function nextDelayMs(attempt: number) {
+  // 0-5: 2.5s, 6-12: 5s, 13+: 10s
+  if (attempt <= 5) return 2500;
+  if (attempt <= 12) return 5000;
+  return 10000;
+}
+
+/** ✅ add small jitter to avoid burst */
+function jitter(ms: number) {
+  const r = 1 + Math.random() * 0.2; // +0..20%
+  return Math.floor(ms * r);
 }
 
 export default function QPayModal({
@@ -93,27 +107,84 @@ export default function QPayModal({
     return formatDuration(data?.durationLabel ?? null, data?.durationDays ?? null);
   }, [data?.durationLabel, data?.durationDays]);
 
-  // ✅ Poll check endpoint (логик хэвээр)
+  // =========================
+  // ✅ Polling (SOFT) — backoff + jitter + stop conditions
+  // =========================
+  const stopRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     if (!open || !data?.ref) return;
 
-    let timer: ReturnType<typeof setInterval> | null = null;
-    let stopped = false;
+    stopRef.current = false;
+    inFlightRef.current = false;
+
+    // ✅ stop after X minutes (soft cap)
+    const STARTED_AT = Date.now();
+    const HARD_TIMEOUT_MS = 8 * 60 * 1000; // 8 минут (хүсвэл өөрчилж болно)
+
+    let attempt = 0;
+
+    const clearAll = () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = null;
+
+      inFlightRef.current = false;
+    };
+
+    const scheduleNext = (delayMs: number) => {
+      if (stopRef.current) return;
+      clearAll();
+      timerRef.current = setTimeout(() => {
+        tick();
+      }, delayMs);
+    };
 
     const tick = async () => {
       try {
-        if (stopped) return;
+        if (stopRef.current) return;
+
+        // ✅ hard timeout stop
+        if (Date.now() - STARTED_AT > HARD_TIMEOUT_MS) {
+          stopRef.current = true;
+          clearAll();
+          setStatus("idle");
+          // хүсвэл энд “Хугацаа дууссан” гэх мэт бичиж болно (UI өөрчлөхгүй гээд орхилоо)
+          return;
+        }
+
+        // ✅ prevent overlap requests
+        if (inFlightRef.current) {
+          scheduleNext(jitter(1500));
+          return;
+        }
 
         if (!user) {
           setLastErr("Login хийгээгүй байна.");
           setStatus("idle");
+          // user байхгүй бол polling-оо зөөлөн үргэлжлүүлээд байя
+          scheduleNext(jitter(5000));
           return;
         }
 
+        inFlightRef.current = true;
         setStatus("checking");
         setLastErr(null);
 
+        // ✅ tab background үед polling-ийг удаашруулна
+        const hidden = typeof document !== "undefined" && document.hidden;
+        const base = nextDelayMs(attempt);
+        const delay = hidden ? Math.max(15000, base) : base;
+
         const idToken = await user.getIdToken();
+
+        const ac = new AbortController();
+        abortRef.current = ac;
 
         const r = await fetch("/api/qpay/checkout/check", {
           method: "POST",
@@ -122,6 +193,7 @@ export default function QPayModal({
             Authorization: `Bearer ${idToken}`,
           },
           body: JSON.stringify({ ref: data.ref }),
+          signal: ac.signal,
         });
 
         const j = await r.json().catch(() => ({}));
@@ -129,30 +201,59 @@ export default function QPayModal({
         if (!r.ok) {
           setStatus("idle");
           setLastErr(j?.message || `Check failed (${r.status})`);
+          attempt += 1;
+          inFlightRef.current = false;
+          scheduleNext(jitter(delay));
           return;
         }
 
-        if (j?.ok && (j?.paid === true || j?.status === "PAID")) {
-          stopped = true;
-          if (timer) clearInterval(timer);
+        if (j?.ok && (j?.paid === true || String(j?.status || "").toUpperCase() === "PAID")) {
+          stopRef.current = true;
+          clearAll();
           setStatus("paid");
           onPaid();
           return;
         }
 
+        // pending хэвээр
         setStatus("idle");
+        attempt += 1;
+        inFlightRef.current = false;
+        scheduleNext(jitter(delay));
       } catch (e: any) {
-        setStatus("idle");
-        setLastErr(typeof e?.message === "string" ? e.message : "Check error");
+        // abort бол error гэж үзэхгүй
+        const msg = typeof e?.message === "string" ? e.message : "Check error";
+        if (!/aborted|abort/i.test(msg)) {
+          setStatus("idle");
+          setLastErr(msg);
+        }
+        attempt += 1;
+        inFlightRef.current = false;
+
+        // network error үед ч зөөлөн backoff
+        const base = nextDelayMs(attempt);
+        const hidden = typeof document !== "undefined" && document.hidden;
+        const delay = hidden ? Math.max(15000, base) : base;
+        scheduleNext(jitter(delay));
       }
     };
 
-    tick();
-    timer = setInterval(tick, 2500);
+    // ✅ start soon (not immediate burst)
+    scheduleNext(jitter(900));
+
+    // ✅ visibilitychange: user tab руу буцаад ирэхэд шууд нэг шалгаад үргэлжлүүлнэ
+    const onVis = () => {
+      if (stopRef.current) return;
+      if (!document.hidden) {
+        scheduleNext(300);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
 
     return () => {
-      stopped = true;
-      if (timer) clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVis);
+      stopRef.current = true;
+      clearAll();
     };
   }, [open, data?.ref, user, onPaid]);
 
