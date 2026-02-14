@@ -1,3 +1,4 @@
+// FILE: app/api/qpay/checkout/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import * as admin from "firebase-admin";
@@ -134,7 +135,7 @@ function extractShortUrlFromUrls(urls: any): string {
   return "";
 }
 
-// ✅ duration parse helper (course дээр чинь durationLabel / durationDays байж болно)
+// ✅ duration parse helper
 function parseDurationToDays(input?: string): number | null {
   const s = String(input ?? "").trim().toLowerCase();
   if (!s) return null;
@@ -149,6 +150,16 @@ function parseDurationToDays(input?: string): number | null {
   if (mYears) return Number(mYears[1]) * 365;
 
   return null;
+}
+
+// ✅ тухайн doc дээр QPay мэдээлэл “бэлэн” эсэх
+function hasReadyQpay(p: any) {
+  const qpayInvoiceId = String(p?.qpayInvoiceId || "").trim();
+  if (!qpayInvoiceId) return false;
+  const qr = String(p?.qrImageDataUrl || "").trim();
+  const urls = Array.isArray(p?.urls) ? p.urls : [];
+  const shortUrl = String(p?.shortUrl || "").trim();
+  return !!qr || urls.length > 0 || !!shortUrl;
 }
 
 export async function POST(req: NextRequest) {
@@ -177,20 +188,12 @@ export async function POST(req: NextRequest) {
 
     const db = adminDb();
 
-    // ✅ 3) course info авч invoice дээр хадгална (courseThumbUrl эндээс үүснэ)
+    // 3) course info
     const courseSnap = await db.collection("courses").doc(courseId).get();
     const c = courseSnap.exists ? (courseSnap.data() as any) : null;
 
-    const courseTitle =
-      String(c?.title || "").trim() ||
-      String(c?.name || "").trim() ||
-      null;
-
-    const courseThumbUrl =
-      String(c?.thumbnailUrl || "").trim() ||
-      String(c?.thumbUrl || "").trim() ||
-      String(c?.thumbnail || "").trim() ||
-      null;
+    const courseTitle = String(c?.title || c?.name || "").trim() || null;
+    const courseThumbUrl = String(c?.thumbnailUrl || c?.thumbUrl || c?.thumbnail || "").trim() || null;
 
     let durationDays = 30;
     let durationLabel = "30 хоног";
@@ -206,40 +209,47 @@ export async function POST(req: NextRequest) {
       String(c?.duration || "").trim() ||
       `${durationDays} хоног`;
 
-    // ✅ 4) Pending invoice reuse (course дээр pending байвал хуучныг ашиглана)
-    // - qpayPayments дээр: uid + courseId + status in ["pending","creating"] хамгийн сүүлийнх
-    // - мөн invoices дээр: uid + courseId + status=="PENDING" хамгийн сүүлийнх
-    let reusePayDocId: string | null = null;
-    let reusePay: any = null;
-
-    const payReuseQ = await db
+    // ✅ 4) тухайн course дээрх бүх unpaid docs (хамгийн сүүлийнхийг 1 л үлдээнэ)
+    const unpaidQ = await db
       .collection("qpayPayments")
       .where("uid", "==", decoded.uid)
       .where("courseId", "==", courseId)
       .where("paid", "==", false)
       .orderBy("createdAt", "desc")
-      .limit(1)
+      .limit(10)
       .get();
 
-    if (!payReuseQ.empty) {
-      const d = payReuseQ.docs[0];
-      const data = d.data() as any;
-      const st = String(data?.status || "").toLowerCase();
-      // pending / creating байвал reuse
-      if (st === "pending" || st === "creating") {
-        reusePayDocId = d.id;
-        reusePay = data;
+    const unpaidDocs = unpaidQ.docs;
+
+    // ✅ ACTIVE: хамгийн сүүлийн unpaid docId-г ашиглана (үргэлж 1 түүх)
+    const activeDocId = unpaidDocs.length ? unpaidDocs[0].id : db.collection("qpayPayments").doc().id;
+    const activeData = unpaidDocs.length ? (unpaidDocs[0].data() as any) : null;
+
+    // ✅ Бусад unpaid docs-ыг ARCHIVED болгоно (UI дээр олон мөр харагдахгүй)
+    if (unpaidDocs.length > 1) {
+      const batch = db.batch();
+      for (let i = 1; i < unpaidDocs.length; i++) {
+        const d = unpaidDocs[i];
+        batch.set(
+          d.ref,
+          { status: "archived", archivedAt: admin.firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+        // invoices дотор нь ч мөн адил archived болгоно
+        batch.set(
+          db.collection("invoices").doc(d.id),
+          { status: "ARCHIVED", updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        );
       }
+      await batch.commit();
     }
 
-    // ✅ invoices docId-г payDocId-тай адил болгож мөрдөх (history + pay дэлгэц нэг id-тай)
-    // - reuse бол invoices/<reusePayDocId> дээр merge хийнэ
-    // - шинээр бол new id үүсгээд invoices/<id> + qpayPayments/<id> хамт үүсгэнэ
-    const payDocId = reusePayDocId ?? db.collection("qpayPayments").doc().id;
+    const payDocId = activeDocId;
     const payDocRef = db.collection("qpayPayments").doc(payDocId);
     const invRef = db.collection("invoices").doc(payDocId);
 
-    // ✅ 5) invoices (history) — энд courseThumbUrl бичигдэнэ
+    // ✅ 5) invoices: нэг мөр байх ёстой тул үргэлж UPDATE (amount хамгийн сүүлийнхээр хадгалагдана)
     await invRef.set(
       {
         uid: decoded.uid,
@@ -250,42 +260,47 @@ export async function POST(req: NextRequest) {
         status: "PENDING",
         durationDays,
         durationLabel,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: activeData?.createdAt ?? admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
 
-    // ✅ 6) qpayPayments doc — (reuse бол хадгална, new бол үүсгэнэ)
-    await payDocRef.set(
-      {
-        uid: decoded.uid,
-        courseId,
-        amount,
-        description,
-        status: reusePayDocId ? (reusePay?.status || "pending") : "creating",
-        paid: false,
-        createdAt: reusePayDocId ? (reusePay?.createdAt ?? admin.firestore.FieldValue.serverTimestamp()) : admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    // ✅ 6) Хэрвээ ACTIVE doc дээр QPay бэлэн бөгөөд amount өөрчлөгдөөгүй бол reuse
+    const prevAmount = Number(activeData?.amount);
+    const sameAmount = Number.isFinite(prevAmount) && prevAmount === amount;
 
-    // ✅ 7) Хэрвээ reusePayDocId байвал QPay invoice шинээр үүсгэхгүй, хуучныг буцаана
-    if (reusePayDocId) {
+    if (activeData && sameAmount && hasReadyQpay(activeData)) {
+      // invoices.qpay-г бүрэн нөхөөд буцаана
+      await invRef.set(
+        {
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          qpay: {
+            ref: payDocId,
+            qpayInvoiceId: activeData?.qpayInvoiceId ?? null,
+            senderInvoiceNo: activeData?.senderInvoiceNo ?? null,
+            qrText: activeData?.qrText ?? null,
+            qrImageDataUrl: activeData?.qrImageDataUrl ?? null,
+            shortUrl: activeData?.shortUrl ?? null,
+            urls: Array.isArray(activeData?.urls) ? activeData.urls : [],
+          },
+        },
+        { merge: true }
+      );
+
       return noStoreJson(
         {
           ok: true,
           reused: true,
           invoiceDocId: payDocId,
-          qpayInvoiceId: reusePay?.qpayInvoiceId ?? null,
-          senderInvoiceNo: reusePay?.senderInvoiceNo ?? null,
+          qpayInvoiceId: activeData?.qpayInvoiceId ?? null,
+          senderInvoiceNo: activeData?.senderInvoiceNo ?? null,
           amount,
           description,
-          qrText: reusePay?.qrText ?? null,
-          qrImageDataUrl: reusePay?.qrImageDataUrl ?? null,
-          shortUrl: reusePay?.shortUrl ?? null,
-          urls: reusePay?.urls ?? [],
+          qrText: activeData?.qrText ?? null,
+          qrImageDataUrl: activeData?.qrImageDataUrl ?? null,
+          shortUrl: activeData?.shortUrl ?? null,
+          urls: Array.isArray(activeData?.urls) ? activeData.urls : [],
           durationDays,
           durationLabel,
         },
@@ -293,7 +308,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ 8) New QPay invoice үүсгэнэ
+    // ✅ 7) Эндээс цааш: “шинэ invoice” үүсгэнэ
+    // activeDocId-г солихгүй (өөрөөр хэлбэл түүх 1 л мөр)
+    await payDocRef.set(
+      {
+        uid: decoded.uid,
+        courseId,
+        amount,
+        description,
+        status: "creating",
+        paid: false,
+        createdAt: activeData?.createdAt ?? admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
     const senderInvoiceNo = crypto.randomUUID();
 
     const siteUrl = envOrThrow("SITE_URL").replace(/\/+$/, "");
@@ -325,42 +355,34 @@ export async function POST(req: NextRequest) {
       extractShortUrlFromUrls(urls);
 
     let qrImageDataUrl: string | null = null;
-    let qrPayloadUsed: string | null = null;
 
     if (qrImageBase64) {
       qrImageDataUrl = `data:image/png;base64,${qrImageBase64}`;
-      qrPayloadUsed = "qpay_qr_image";
     } else {
       const payloadForQr = (qrText || shortUrl || "").trim();
       if (payloadForQr) {
         qrImageDataUrl = await toQrPngDataUrl(payloadForQr);
-        qrPayloadUsed = qrText ? "qpay_qr_text" : "generated_from_shortUrl";
       }
     }
 
-    // ✅ 9) qpayPayments update
+    // ✅ 8) qpayPayments update (same docId → түүх давхардахгүй)
     await payDocRef.set(
       {
         status: "pending",
         paid: false,
         senderInvoiceNo,
         qpayInvoiceId: qpayInvoiceId || null,
-
         qrText: qrText || null,
-        qrImageBase64: qrImageBase64 || null,
         qrImageDataUrl: qrImageDataUrl || null,
-        qrPayloadUsed: qrPayloadUsed || null,
-
         shortUrl: shortUrl || null,
         urls,
-
         callbackUrl,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
 
-    // ✅ 10) invoices дотор qpay meta хадгална (history дээр continue хийхэд хэрэгтэй)
+    // ✅ 9) invoices.qpay бүрэн хадгална
     await invRef.set(
       {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -368,7 +390,10 @@ export async function POST(req: NextRequest) {
           ref: payDocId,
           qpayInvoiceId: qpayInvoiceId || null,
           senderInvoiceNo,
+          qrText: qrText || null,
+          qrImageDataUrl: qrImageDataUrl || null,
           shortUrl: shortUrl || null,
+          urls,
         },
       },
       { merge: true }

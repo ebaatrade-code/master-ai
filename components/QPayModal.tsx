@@ -8,18 +8,17 @@ import { useAuth } from "@/components/AuthProvider";
 type Deeplink = { name?: string; description?: string; logo?: string; link: string };
 
 type QPayData = {
-  ref: string; // qpayPayments docId
+  ref: string; // invoices docId (invoiceId)
   qrImageDataUrl?: string | null;
   qr_image?: string | null;
   shortUrl?: string | null;
   urls?: Deeplink[];
 
-  // ✅ OPTIONAL: course duration (if caller passes it)
-  durationLabel?: string | null; // e.g. "180 хоногоор", "3 сар"
-  durationDays?: number | null; // e.g. 180
+  durationLabel?: string | null;
+  durationDays?: number | null;
 };
 
-const QPAY_LOGO_SRC = "/qpay-logo.png"; // ✅ put file in /public/qpay-logo.png
+const QPAY_LOGO_SRC = "/qpay-logo.png";
 
 function formatMnt(n: number) {
   try {
@@ -37,18 +36,24 @@ function formatDuration(durationLabel?: string | null, durationDays?: number | n
   return "—";
 }
 
-/** ✅ backoff schedule */
 function nextDelayMs(attempt: number) {
-  // 0-5: 2.5s, 6-12: 5s, 13+: 10s
   if (attempt <= 5) return 2500;
   if (attempt <= 12) return 5000;
   return 10000;
 }
 
-/** ✅ add small jitter to avoid burst */
 function jitter(ms: number) {
-  const r = 1 + Math.random() * 0.2; // +0..20%
+  const r = 1 + Math.random() * 0.2;
   return Math.floor(ms * r);
+}
+
+function initials(name?: string) {
+  const s = String(name || "").trim();
+  if (!s) return "B";
+  const parts = s.split(/\s+/).filter(Boolean);
+  const a = parts[0]?.[0] || "B";
+  const b = parts[1]?.[0] || "";
+  return (a + b).toUpperCase();
 }
 
 export default function QPayModal({
@@ -74,11 +79,16 @@ export default function QPayModal({
   const [status, setStatus] = useState<"idle" | "checking" | "paid">("idle");
   const [lastErr, setLastErr] = useState<string | null>(null);
 
-  // ✅ Portal mount guard (SSR safe)
+  // ✅ Local “self-healed” qpay data (props-оос тусдаа)
+  const [liveQrDataUrl, setLiveQrDataUrl] = useState<string | null>(null);
+  const [liveUrls, setLiveUrls] = useState<Deeplink[]>([]);
+  const [liveShortUrl, setLiveShortUrl] = useState<string | null>(null);
+
+  // ✅ Portal mount guard
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // ✅ Lock body scroll while modal open (mobile/iOS)
+  // ✅ Lock body scroll while modal open
   useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
@@ -93,7 +103,24 @@ export default function QPayModal({
     };
   }, [open]);
 
+  // ✅ Reset live state when opening / ref changes
+  useEffect(() => {
+    if (!open) return;
+    setLiveQrDataUrl(null);
+    setLiveUrls([]);
+    setLiveShortUrl(null);
+    setLastErr(null);
+  }, [open, data?.ref]);
+
+  const durationText = useMemo(() => {
+    return formatDuration(data?.durationLabel ?? null, data?.durationDays ?? null);
+  }, [data?.durationLabel, data?.durationDays]);
+
   const qrSrc = useMemo(() => {
+    // 1) live (API-аас нөхөгдсөн)
+    if (liveQrDataUrl && liveQrDataUrl.startsWith("data:image/")) return liveQrDataUrl;
+
+    // 2) props
     const a = data?.qrImageDataUrl ? String(data.qrImageDataUrl) : "";
     if (a && a.startsWith("data:image/")) return a;
 
@@ -101,14 +128,85 @@ export default function QPayModal({
     if (b64) return `data:image/png;base64,${b64}`;
 
     return null;
-  }, [data?.qrImageDataUrl, data?.qr_image]);
+  }, [data?.qrImageDataUrl, data?.qr_image, liveQrDataUrl]);
 
-  const durationText = useMemo(() => {
-    return formatDuration(data?.durationLabel ?? null, data?.durationDays ?? null);
-  }, [data?.durationLabel, data?.durationDays]);
+  const bankUrls = useMemo(() => {
+    const fromLive = liveUrls.length ? liveUrls : [];
+    if (fromLive.length) return fromLive;
+    return Array.isArray(data?.urls) ? data!.urls! : [];
+  }, [data?.urls, liveUrls]);
 
   // =========================
-  // ✅ Polling (SOFT) — backoff + jitter + stop conditions
+  // ✅ SELF-HEAL: QR/data missing OR amount changed -> call create-invoice
+  // =========================
+  const ensuringRef = useRef(false);
+
+  useEffect(() => {
+    if (!open || !data?.ref) return;
+    if (!user) return;
+
+    const hasAnyBank = (Array.isArray(data?.urls) && data!.urls!.length > 0) || liveUrls.length > 0;
+    const hasQr = !!qrSrc;
+    const shouldEnsure = !hasQr || !hasAnyBank; // QR байхгүй, эсвэл bank deeplink хоосон бол
+
+    if (!shouldEnsure) return;
+    if (ensuringRef.current) return;
+
+    ensuringRef.current = true;
+
+    const run = async () => {
+      try {
+        setLastErr(null);
+
+        const idToken = await user.getIdToken();
+        const r = await fetch("/api/qpay/create-invoice", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            ref: data.ref,
+            uid: user.uid,
+            // ✅ amount одоогийн UI дээрх дүнгээр заавал шинэчилнэ (150->165 fix)
+            amount,
+            description: `Master AI · ${courseTitle}`,
+            // courseId энд заавал байх албагүй (байвал сайн)
+            // courseId: (undefined)
+          }),
+        });
+
+        const j = await r.json().catch(() => ({}));
+
+        if (!r.ok) {
+          setLastErr(j?.error || j?.message || `Invoice create failed (${r.status})`);
+          ensuringRef.current = false;
+          return;
+        }
+
+        // ✅ Live state update (UI өөрчлөхгүйгээр QR орж ирнэ)
+        const qrid = String(j?.qrImageDataUrl || "");
+        if (qrid && qrid.startsWith("data:image/")) setLiveQrDataUrl(qrid);
+
+        const urls = Array.isArray(j?.urls) ? j.urls : [];
+        if (urls.length) setLiveUrls(urls);
+
+        const su = String(j?.shortUrl || "").trim();
+        if (su) setLiveShortUrl(su);
+
+        ensuringRef.current = false;
+      } catch (e: any) {
+        setLastErr(e?.message || "Invoice create error");
+        ensuringRef.current = false;
+      }
+    };
+
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, data?.ref, user, amount, courseTitle]);
+
+  // =========================
+  // ✅ Polling — unchanged (checks paid)
   // =========================
   const stopRef = useRef(false);
   const inFlightRef = useRef(false);
@@ -121,9 +219,8 @@ export default function QPayModal({
     stopRef.current = false;
     inFlightRef.current = false;
 
-    // ✅ stop after X minutes (soft cap)
     const STARTED_AT = Date.now();
-    const HARD_TIMEOUT_MS = 8 * 60 * 1000; // 8 минут (хүсвэл өөрчилж болно)
+    const HARD_TIMEOUT_MS = 8 * 60 * 1000;
 
     let attempt = 0;
 
@@ -140,25 +237,20 @@ export default function QPayModal({
     const scheduleNext = (delayMs: number) => {
       if (stopRef.current) return;
       clearAll();
-      timerRef.current = setTimeout(() => {
-        tick();
-      }, delayMs);
+      timerRef.current = setTimeout(() => tick(), delayMs);
     };
 
     const tick = async () => {
       try {
         if (stopRef.current) return;
 
-        // ✅ hard timeout stop
         if (Date.now() - STARTED_AT > HARD_TIMEOUT_MS) {
           stopRef.current = true;
           clearAll();
           setStatus("idle");
-          // хүсвэл энд “Хугацаа дууссан” гэх мэт бичиж болно (UI өөрчлөхгүй гээд орхилоо)
           return;
         }
 
-        // ✅ prevent overlap requests
         if (inFlightRef.current) {
           scheduleNext(jitter(1500));
           return;
@@ -167,7 +259,6 @@ export default function QPayModal({
         if (!user) {
           setLastErr("Login хийгээгүй байна.");
           setStatus("idle");
-          // user байхгүй бол polling-оо зөөлөн үргэлжлүүлээд байя
           scheduleNext(jitter(5000));
           return;
         }
@@ -176,7 +267,6 @@ export default function QPayModal({
         setStatus("checking");
         setLastErr(null);
 
-        // ✅ tab background үед polling-ийг удаашруулна
         const hidden = typeof document !== "undefined" && document.hidden;
         const base = nextDelayMs(attempt);
         const delay = hidden ? Math.max(15000, base) : base;
@@ -215,13 +305,11 @@ export default function QPayModal({
           return;
         }
 
-        // pending хэвээр
         setStatus("idle");
         attempt += 1;
         inFlightRef.current = false;
         scheduleNext(jitter(delay));
       } catch (e: any) {
-        // abort бол error гэж үзэхгүй
         const msg = typeof e?.message === "string" ? e.message : "Check error";
         if (!/aborted|abort/i.test(msg)) {
           setStatus("idle");
@@ -230,7 +318,6 @@ export default function QPayModal({
         attempt += 1;
         inFlightRef.current = false;
 
-        // network error үед ч зөөлөн backoff
         const base = nextDelayMs(attempt);
         const hidden = typeof document !== "undefined" && document.hidden;
         const delay = hidden ? Math.max(15000, base) : base;
@@ -238,15 +325,11 @@ export default function QPayModal({
       }
     };
 
-    // ✅ start soon (not immediate burst)
     scheduleNext(jitter(900));
 
-    // ✅ visibilitychange: user tab руу буцаад ирэхэд шууд нэг шалгаад үргэлжлүүлнэ
     const onVis = () => {
       if (stopRef.current) return;
-      if (!document.hidden) {
-        scheduleNext(300);
-      }
+      if (!document.hidden) scheduleNext(300);
     };
     document.addEventListener("visibilitychange", onVis);
 
@@ -259,118 +342,157 @@ export default function QPayModal({
 
   if (!open || !data || !mounted) return null;
 
-  const bankUrls = Array.isArray(data.urls) ? data.urls : [];
-
   const modal = (
     <div className="fixed inset-0 z-[1000]" aria-modal="true" role="dialog">
-      {/* overlay */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      {/* ✅ ALWAYS CENTERED */}
-      <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4 md:p-6">
+      <div className="absolute inset-0 flex items-center justify-center p-0 md:p-6">
         <div
           className="
-            w-full max-w-[860px]
-            max-h-[calc(100dvh-24px)]
-            rounded-2xl bg-white shadow-2xl
-            overflow-hidden
+            w-full h-[100dvh] max-w-none
+            rounded-none bg-white shadow-2xl overflow-hidden
+            md:w-full md:max-w-[860px] md:h-auto md:max-h-[calc(100dvh-24px)]
+            md:rounded-2xl
           "
         >
-          {/* header */}
-          <div className="flex items-start justify-between gap-4 border-b bg-white px-5 sm:px-6 py-4 sm:py-5">
-            <div>
-              <div className="text-[18px] sm:text-[20px] font-bold text-neutral-900">
-                Төлбөр хүлээгдэж байна
+          <div className="border-b bg-white px-4 py-4 md:px-6 md:py-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[18px] font-extrabold text-neutral-900 md:text-[20px] md:font-bold">
+                  Төлбөр хүлээгдэж байна
+                </div>
+                <div className="mt-1 text-[13px] text-neutral-500 md:text-[14px]">
+                  Төлбөр төлөгдсөний дараа таны худалдан авалт автоматаар баталгаажина.
+                </div>
               </div>
-              <div className="mt-1 text-[13px] sm:text-[14px] text-neutral-500">
-                Төлбөр төлөгдсөний дараа таны худалдан авалт автоматаар баталгаажина.
-              </div>
-            </div>
 
-            <button
-              onClick={onClose}
-              className="shrink-0 rounded-full border px-4 py-2 text-[13px] sm:text-[14px] text-neutral-700 hover:bg-neutral-50"
-            >
-              Хаах
-            </button>
+              <button
+                onClick={onClose}
+                className="
+                  shrink-0 rounded-full border px-4 py-2
+                  text-[13px] text-neutral-700 hover:bg-neutral-50
+                  md:text-[14px]
+                "
+              >
+                Хаах
+              </button>
+            </div>
           </div>
 
-          {/* body scroll */}
-          <div className="overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] max-h-[calc(100dvh-140px)]">
-            <div className="mx-auto w-full max-w-[760px] p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {/* QPAY / QR */}
-              <div className="rounded-2xl border bg-white p-4 sm:p-6">
-                <div className="flex flex-col items-center">
-                  {/* ✅ QPay Logo */}
-                  <div className="flex items-center gap-2">
-                    <div className="relative h-8 w-8">
-                      <Image src={QPAY_LOGO_SRC} alt="QPay" fill className="object-contain" priority />
-                    </div>
-                    <div className="text-[16px] sm:text-[17px] font-semibold text-neutral-900">QPay</div>
+          <div className="h-[calc(100dvh-72px)] overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] md:h-auto md:max-h-[calc(100dvh-140px)]">
+            <div
+              className="
+                mx-auto w-full max-w-none
+                px-4 pt-5 pb-[max(18px,env(safe-area-inset-bottom))] space-y-6
+                md:max-w-[760px] md:p-6 md:space-y-6
+              "
+            >
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-2">
+                  <div className="relative h-8 w-8">
+                    <Image src={QPAY_LOGO_SRC} alt="QPay" fill className="object-contain" priority />
                   </div>
+                  <div className="text-[16px] font-semibold text-neutral-900">QPay</div>
+                </div>
 
-                  <div className="mt-4 rounded-2xl bg-neutral-100 p-3 sm:p-4">
-                    <div className="flex h-[250px] w-[250px] sm:h-[280px] sm:w-[280px] items-center justify-center rounded-xl bg-white">
-                      {qrSrc ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={qrSrc}
-                          alt="QPay QR"
-                          className="h-[230px] w-[230px] sm:h-[260px] sm:w-[260px] object-contain"
-                        />
-                      ) : (
-                        <div className="text-center text-[13px] sm:text-[14px] text-neutral-500">
-                          QR хараахан бэлэн биш
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-5 text-[13px] sm:text-[14px] text-neutral-500">Нийт төлөх дүн:</div>
-                  <div className="text-[30px] sm:text-[34px] font-semibold text-neutral-900">{formatMnt(amount)}₮</div>
-
-                  <div className="mt-4 w-full rounded-xl bg-neutral-100 px-4 py-3 text-[13px] sm:text-[14px] text-neutral-600">
-                    Компьютер дээр: QR-аa банкны апп-аараа уншуулж төлнө.
+                <div className="mt-4 rounded-2xl bg-neutral-100 p-3">
+                  <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-white">
+                    {qrSrc ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={qrSrc} alt="QPay QR" className="h-[238px] w-[238px] object-contain" />
+                    ) : (
+                      <div className="text-center text-[13px] text-neutral-500">QR хараахан бэлэн биш</div>
+                    )}
                   </div>
                 </div>
+
+                <div className="mt-4 text-[12px] text-neutral-500">Нийт төлөх дүн:</div>
+                <div className="text-[28px] font-extrabold tracking-tight text-neutral-900">
+                  {formatMnt(amount)}₮
+                </div>
+
+                <div className="mt-3 w-full rounded-xl bg-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
+                  Та гүйлгээ хийх банкаа сонгоно уу?
+                </div>
+
+                {bankUrls.length ? (
+                  <div className="mt-4 w-full">
+                    <div className="grid grid-cols-4 gap-3">
+                      {bankUrls.slice(0, 20).map((u, idx) => {
+                        const label = u.name || "Bank";
+                        return (
+                          <a
+                            key={`${u.link}-${idx}`}
+                            href={u.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="
+                              group flex flex-col items-center justify-center
+                              rounded-2xl border border-neutral-200 bg-white
+                              p-2 active:scale-[0.99]
+                            "
+                            aria-label={label}
+                            title={label}
+                          >
+                            <div className="relative h-14 w-14 overflow-hidden rounded-2xl bg-neutral-100">
+                              {u.logo ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={u.logo} alt={label} className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-[16px] font-bold text-neutral-700">
+                                  {initials(label)}
+                                </div>
+                              )}
+                            </div>
+                          </a>
+                        );
+                      })}
+                    </div>
+
+                    {bankUrls.length > 20 ? (
+                      <div className="mt-3 text-center text-[12px] text-neutral-500">
+                        Илүү олон банк байвал доош гүйлгэнэ үү.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-4 text-[13px] text-neutral-500">Bank deeplink олдсонгүй.</div>
+                )}
               </div>
 
-              {/* Course info */}
-              <div className="rounded-2xl border bg-white p-4 sm:p-6">
-                <div className="text-[14px] sm:text-[15px] font-bold text-neutral-900">Хичээлийн нэр</div>
+              <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:rounded-2xl md:border md:bg-white md:p-6">
+                <div className="text-[13px] font-semibold text-neutral-800 md:text-[15px] md:font-bold">
+                  Хичээлийн нэр
+                </div>
 
-                <div className="mt-4 rounded-2xl border border-neutral-200 bg-white p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="h-12 w-12 overflow-hidden rounded-xl bg-neutral-200 shrink-0">
-                        {courseThumbUrl ? (
-                          <Image
-                            src={courseThumbUrl}
-                            alt={courseTitle}
-                            width={48}
-                            height={48}
-                            className="h-12 w-12 object-cover"
-                          />
-                        ) : null}
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="truncate text-[15px] sm:text-[16px] font-bold text-neutral-900">
-                          {courseTitle}
-                        </div>
-
-                        {/* ✅ "Контент" -> Duration */}
-                        <div className="text-[12px] sm:text-[13px] text-neutral-500">{durationText}</div>
-                      </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-11 w-11 overflow-hidden rounded-xl bg-neutral-200 shrink-0">
+                      {courseThumbUrl ? (
+                        <Image
+                          src={courseThumbUrl}
+                          alt={courseTitle}
+                          width={44}
+                          height={44}
+                          className="h-11 w-11 object-cover"
+                        />
+                      ) : null}
                     </div>
 
-                    <div className="text-[15px] sm:text-[16px] font-bold text-neutral-900">
-                      {formatMnt(amount)}₮
+                    <div className="min-w-0">
+                      <div className="truncate text-[14px] font-bold text-neutral-900 md:text-[16px]">
+                        {courseTitle}
+                      </div>
+                      <div className="text-[12px] text-neutral-500 md:text-[13px]">{durationText}</div>
                     </div>
+                  </div>
+
+                  <div className="text-[14px] font-extrabold text-neutral-900 md:text-[16px] md:font-bold">
+                    {formatMnt(amount)}₮
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-2 text-[14px] sm:text-[15px]">
+                <div className="hidden md:block mt-4 space-y-2 text-[14px] sm:text-[15px]">
                   <div className="flex items-center justify-between">
                     <div className="font-bold text-neutral-900">ҮНЭ</div>
                     <div className="font-semibold text-neutral-900">{formatMnt(amount)}₮</div>
@@ -383,48 +505,21 @@ export default function QPayModal({
                 </div>
               </div>
 
-              {/* mobile deeplinks */}
-              <div className="rounded-2xl border bg-white p-4 sm:p-6 md:hidden">
-                <div className="flex items-center justify-between">
-                  <div className="text-[13px] sm:text-[14px] font-medium text-neutral-700">Банкны апп-аар төлөх</div>
-                  <div className="text-[12px] sm:text-[13px] text-neutral-500">Mobile</div>
-                </div>
-
-                {bankUrls.length ? (
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    {bankUrls.slice(0, 12).map((u, idx) => (
-                      <a
-                        key={`${u.link}-${idx}`}
-                        href={u.link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-xl bg-neutral-100 hover:bg-neutral-200 px-3 py-2 text-[13px] sm:text-[14px] text-neutral-700"
-                      >
-                        {u.name || "Bank"}
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 text-[13px] sm:text-[14px] text-neutral-500">Bank deeplink олдсонгүй.</div>
-                )}
-              </div>
-
-              {/* confirm + button */}
-              <div className="rounded-2xl border bg-white p-4 sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div className="text-[13px] sm:text-[14px] font-medium text-neutral-700">Төлбөр баталгаажуулалт</div>
+              <div className="rounded-2xl border border-neutral-200 bg-white p-4 md:rounded-2xl md:border md:bg-white md:p-6">
+                <div className="text-[13px] font-semibold text-neutral-800 md:text-[14px] md:font-medium md:text-neutral-700">
+                  Төлбөр баталгаажуулалт
                 </div>
 
                 <div className="sr-only" aria-live="polite">
                   Status: {status === "paid" ? "PAID" : status === "checking" ? "CHECKING" : "PENDING"}
                 </div>
 
-                {lastErr ? <div className="mt-3 text-[13px] sm:text-[14px] text-red-600">{lastErr}</div> : null}
+                {lastErr ? <div className="mt-3 text-[13px] text-red-600">{lastErr}</div> : null}
 
-                <div className="mt-5">
+                <div className="mt-4">
                   <button
                     onClick={onClose}
-                    className="w-full rounded-xl bg-black px-5 py-3 text-[14px] sm:text-[15px] font-semibold text-white hover:bg-black/90"
+                    className="w-full rounded-xl bg-black px-5 py-3 text-[15px] font-semibold text-white hover:bg-black/90"
                   >
                     Ок
                   </button>

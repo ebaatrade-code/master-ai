@@ -1,6 +1,15 @@
 // FILE: app/api/qpay/create-invoice/route.ts
 import { NextResponse } from "next/server";
-import { qpayCreateInvoice, extractShortUrl, toDataUrlPng, type QPayInvoiceCreateReq } from "@/lib/qpay";
+import {
+  qpayCreateInvoice,
+  extractShortUrl,
+  toDataUrlPng,
+  type QPayInvoiceCreateReq,
+} from "@/lib/qpay";
+
+// ✅ таны проект дээр adminAuth/adminDb нь "function" байж байгаа (=> instance буцаана)
+import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
+import { FieldValue } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
@@ -18,6 +27,44 @@ function isAmount(x: unknown): x is number {
   return typeof x === "number" && Number.isFinite(x) && x > 0 && x < 1_000_000_000;
 }
 
+/**
+ * ✅ adminAuth/adminDb чинь instance эсвэл function байж болно.
+ * - зарим проект: export const adminAuth = getAuth();
+ * - таны проект: export const adminAuth = () => getAuth();
+ */
+function getAdminAuth(): any {
+  const a: any = adminAuth as any;
+  return typeof a === "function" ? a() : a;
+}
+function getAdminDb(): any {
+  const d: any = adminDb as any;
+  return typeof d === "function" ? d() : d;
+}
+
+async function requireUid(req: Request) {
+  const auth = req.headers.get("authorization") || "";
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (!m) return null;
+
+  try {
+    const aa = getAdminAuth();
+    const decoded = await aa.verifyIdToken(m[1]);
+    return decoded?.uid || null;
+  } catch {
+    return null;
+  }
+}
+
+type Body = {
+  ref?: unknown; // invoices doc id
+  amount?: unknown;
+  description?: unknown;
+  courseId?: unknown;
+  uid?: unknown;
+  orderId?: unknown;
+  senderInvoiceNo?: unknown;
+};
+
 export async function POST(req: Request) {
   try {
     const siteUrl = mustEnv("SITE_URL");
@@ -25,30 +72,77 @@ export async function POST(req: Request) {
     const receiverCode = mustEnv("QPAY_INVOICE_RECEIVER_CODE");
     const branchCode = process.env.QPAY_BRANCH_CODE || "ONLINE";
 
-    const json = (await req.json().catch(() => null)) as
-      | { amount?: unknown; description?: unknown; courseId?: unknown; uid?: unknown; orderId?: unknown; senderInvoiceNo?: unknown }
-      | null;
+    const authedUid = await requireUid(req);
+    if (!authedUid) return noStoreJson({ error: "Unauthorized" }, 401);
 
+    const json = (await req.json().catch(() => null)) as Body | null;
     if (!json) return noStoreJson({ error: "Invalid JSON" }, 400);
+
+    const ref = String(json.ref ?? "").trim();
+    if (!ref) return noStoreJson({ error: "Missing ref" }, 400);
+
+    const uid = String(json.uid ?? "").trim();
+    if (!uid) return noStoreJson({ error: "Missing uid" }, 400);
+    if (uid !== authedUid) return noStoreJson({ error: "Forbidden" }, 403);
+
+    const courseId = String(json.courseId ?? "").trim() || null;
 
     const amount = typeof json.amount === "string" ? Number(json.amount) : json.amount;
     if (!isAmount(amount)) return noStoreJson({ error: "Invalid amount" }, 400);
 
     const description = String(json.description ?? "Master AI payment").trim();
-    if (description.length < 2 || description.length > 140) return noStoreJson({ error: "Invalid description" }, 400);
+    if (description.length < 2 || description.length > 140) {
+      return noStoreJson({ error: "Invalid description" }, 400);
+    }
 
-    // unique sender_invoice_no — таны screenshot дээр энэ хадгалагдаж байна
-    const senderInvoiceNoRaw = String(json.senderInvoiceNo ?? json.orderId ?? Date.now());
-    const sender_invoice_no = senderInvoiceNoRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || String(Date.now());
+    // ✅ Firestore existing invoice check (idempotent)
+    const db = getAdminDb();
+    const invRef = db.collection("invoices").doc(ref);
+    const snap = await invRef.get();
+    const existing = snap.exists ? (snap.data() as any) : null;
+
+    const existingAmount = typeof existing?.amount === "number" ? existing.amount : null;
+    const existingQpayInvoiceId = String(existing?.qpay?.qpayInvoiceId || "").trim();
+    const existingQr = String(existing?.qpay?.qrImageDataUrl || "").trim();
+    const existingUrls = Array.isArray(existing?.qpay?.urls) ? existing.qpay.urls : [];
+    const existingShortUrl = String(existing?.qpay?.shortUrl || "").trim();
+
+    const canReuse =
+      existingAmount === amount &&
+      !!existingQpayInvoiceId &&
+      (!!existingQr || existingUrls.length > 0 || !!existingShortUrl);
+
+    if (canReuse) {
+      return noStoreJson({
+        ok: true,
+        reused: true,
+        qpayInvoiceId: existingQpayInvoiceId,
+        qrText: existing?.qpay?.qrText ?? null,
+        qrImageBase64: null,
+        qrImageDataUrl: existing?.qpay?.qrImageDataUrl ?? null,
+        urls: existingUrls,
+        shortUrl: existing?.qpay?.shortUrl ?? null,
+        amount,
+        description,
+        senderInvoiceNo: existing?.qpay?.senderInvoiceNo ?? null,
+        orderId: existing?.qpay?.senderInvoiceNo ?? ref,
+        callbackUrl: existing?.qpay?.callbackUrl ?? null,
+      });
+    }
+
+    // ✅ amount өөрчлөгдвөл шинэ invoice (150 -> 165 fix)
+    const senderInvoiceNoRaw = String(json.senderInvoiceNo ?? json.orderId ?? `${ref}-${amount}-${Date.now()}`);
+    const sender_invoice_no =
+      senderInvoiceNoRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || `${ref}-${Date.now()}`.slice(0, 40);
 
     const orderId = String(json.orderId ?? sender_invoice_no).slice(0, 80);
 
-    // callback_url — QPay төлөгдсөний дараа энэ endpoint руу цохино
     const callback_url =
       `${siteUrl.replace(/\/$/, "")}/api/qpay/callback` +
       `?orderId=${encodeURIComponent(orderId)}` +
-      `&courseId=${encodeURIComponent(String(json.courseId ?? ""))}` +
-      `&uid=${encodeURIComponent(String(json.uid ?? ""))}`;
+      `&courseId=${encodeURIComponent(String(courseId ?? ""))}` +
+      `&uid=${encodeURIComponent(String(uid ?? ""))}` +
+      `&ref=${encodeURIComponent(ref)}`;
 
     const payload: QPayInvoiceCreateReq = {
       invoice_code: invoiceCode,
@@ -67,13 +161,40 @@ export async function POST(req: Request) {
 
     const inv = await qpayCreateInvoice(payload);
 
+    const urls = Array.isArray(inv.urls) ? inv.urls : [];
+    const shortUrl = extractShortUrl(urls);
+    const qrImageDataUrl = toDataUrlPng(inv.qr_image ?? null);
+
+    await invRef.set(
+      {
+        uid,
+        courseId,
+        amount,
+        status: existing?.status || "pending",
+        updatedAt: FieldValue.serverTimestamp(),
+        qpay: {
+          ref,
+          qpayInvoiceId: inv.invoice_id,
+          senderInvoiceNo: sender_invoice_no,
+          qrText: inv.qr_text ?? null,
+          qrImageDataUrl: qrImageDataUrl ?? null,
+          shortUrl: shortUrl ?? null,
+          urls,
+          callbackUrl: callback_url,
+        },
+      },
+      { merge: true }
+    );
+
     return noStoreJson({
+      ok: true,
+      reused: false,
       qpayInvoiceId: inv.invoice_id,
       qrText: inv.qr_text ?? null,
       qrImageBase64: inv.qr_image ?? null,
-      qrImageDataUrl: toDataUrlPng(inv.qr_image ?? null),
-      urls: Array.isArray(inv.urls) ? inv.urls : [],
-      shortUrl: extractShortUrl(inv.urls),
+      qrImageDataUrl,
+      urls,
+      shortUrl,
       amount,
       description,
       senderInvoiceNo: sender_invoice_no,

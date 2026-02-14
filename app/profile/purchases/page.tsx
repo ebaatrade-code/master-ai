@@ -89,7 +89,6 @@ function fmt(ts: any) {
   });
 }
 
-// ✅ expire огноог тусад нь харагдах хэлбэрээр (өдөр/цагтай)
 function fmtExpire(ts: any) {
   const d = toDateSafe(ts);
   if (!d) return "—";
@@ -104,8 +103,13 @@ function fmtExpire(ts: any) {
 
 function badge(status?: string) {
   const s = (status ?? "").toUpperCase();
+
+  // ✅ MOBILE: PENDING text black
+  // ✅ DESKTOP: хэвээр (sm:text-amber-200)
+  if (s === "PENDING")
+    return "bg-amber-500/15 text-black border-amber-500/25 sm:text-amber-200";
+
   if (s === "PAID") return "bg-emerald-500/15 text-emerald-300 border-emerald-500/25";
-  if (s === "PENDING") return "bg-amber-500/15 text-amber-200 border-amber-500/25";
   if (s === "CANCELLED") return "bg-white/10 text-white/60 border-white/15";
   if (s === "EXPIRED") return "bg-white/10 text-white/60 border-white/15";
   return "bg-white/10 text-white/70 border-white/15";
@@ -124,11 +128,10 @@ function durationText(durationLabel?: string | null, durationDays?: number | nul
   const lbl = String(durationLabel ?? "").trim();
   if (lbl) return lbl;
   const dd = Number(durationDays ?? 0);
-  if (Number.isFinite(dd) && dd > 0) return `${dd} хоногоор`;
+  if (Number.isFinite(dd) && dd > 0) return `${dd} хоног`;
   return "—";
 }
 
-// ✅ expiresAt байхгүй үед purchasedAt + durationDays-аар автоматаар тооцно
 function computeExpiresAt(purchasedAt: any, expiresAt: any, durationDays?: number | null) {
   const ex = toDateSafe(expiresAt);
   if (ex) return ex;
@@ -144,10 +147,9 @@ function computeExpiresAt(purchasedAt: any, expiresAt: any, durationDays?: numbe
   return null;
 }
 
-// ✅ expired эсэхийг "тооцоолсон expires" дээр тулгуурлана
 function isExpiredBy(purchasedAt: any, expiresAt: any, durationDays?: number | null) {
   const ex = computeExpiresAt(purchasedAt, expiresAt, durationDays);
-  if (!ex) return false; // огт тооцоолж болохгүй бол "дуусаагүй" гэж үзье
+  if (!ex) return false;
   return ex.getTime() <= Date.now();
 }
 
@@ -160,9 +162,10 @@ export default function PurchasesPage() {
   const [purchased, setPurchased] = useState<PurchasedCourseRow[]>([]);
   const [pErr, setPErr] = useState<string | null>(null);
 
-  // =========================
-  // 1) Invoices (history)
-  // =========================
+  // ✅ Course existence cache (to hide deleted courses in history & purchases)
+  // key = courseId, value = true/false
+  const [courseExists, setCourseExists] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     if (loading) return;
     if (!user?.uid) return;
@@ -190,9 +193,60 @@ export default function PurchasesPage() {
     return () => unsub();
   }, [user?.uid, loading]);
 
-  // =========================
-  // 2) Purchased courses (from user.purchases map)
-  // =========================
+  // ✅ When rows change: fetch course existence for rows that have courseId
+  useEffect(() => {
+    if (loading) return;
+    if (!user?.uid) return;
+    if (!rows.length) return;
+
+    let alive = true;
+
+    (async () => {
+      try {
+        const ids = Array.from(
+          new Set(
+            rows
+              .map((r) => String(r.courseId || "").trim())
+              .filter(Boolean)
+          )
+        );
+
+        if (!ids.length) return;
+
+        // Only check ids we haven't checked yet
+        const missing = ids.filter((cid) => courseExists[cid] === undefined);
+        if (!missing.length) return;
+
+        const checks = await Promise.all(
+          missing.map(async (cid) => {
+            try {
+              const csnap = await getDoc(doc(db, "courses", cid));
+              return { cid, exists: csnap.exists() };
+            } catch {
+              // If read fails, don't hide it aggressively; mark as true (safe)
+              return { cid, exists: true };
+            }
+          })
+        );
+
+        if (!alive) return;
+
+        setCourseExists((prev) => {
+          const next = { ...prev };
+          for (const c of checks) next[c.cid] = c.exists;
+          return next;
+        });
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, user?.uid, loading]); // intentionally not depending on courseExists to avoid loops
+
   useEffect(() => {
     if (loading) return;
     if (!user?.uid) return;
@@ -219,45 +273,64 @@ export default function PurchasesPage() {
           courseIds.map(async (cid) => {
             try {
               const csnap = await getDoc(doc(db, "courses", cid));
-              const c = csnap.exists() ? (csnap.data() as any) : null;
-              return { courseId: cid, course: c };
+              const exists = csnap.exists();
+              const c = exists ? (csnap.data() as any) : null;
+              return { courseId: cid, course: c, exists };
             } catch {
-              return { courseId: cid, course: null as any };
+              // If read fails, don't hide it aggressively
+              return { courseId: cid, course: null as any, exists: true };
             }
           })
         );
 
-        const merged: PurchasedCourseRow[] = courseIds.map((cid) => {
-          const p = purchasesMap?.[cid] || {};
-          const c = courseDocs.find((x) => x.courseId === cid)?.course;
+        // ✅ update courseExists cache too
+        if (alive) {
+          setCourseExists((prev) => {
+            const next = { ...prev };
+            for (const cd of courseDocs) {
+              // only set if not already known
+              if (next[cd.courseId] === undefined && typeof cd.exists === "boolean") {
+                next[cd.courseId] = cd.exists;
+              }
+            }
+            return next;
+          });
+        }
 
-          const title =
-            String(c?.title || "").trim() ||
-            String(p?.courseTitle || "").trim() ||
-            `Course: ${cid}`;
+        // ✅ HIDE deleted courses: only keep exists===true
+        const merged: PurchasedCourseRow[] = courseDocs
+          .filter((x) => x.exists === true)
+          .map((x) => {
+            const cid = x.courseId;
+            const p = purchasesMap?.[cid] || {};
+            const c = x.course;
 
-          const thumbUrl =
-            (typeof c?.thumbnailUrl === "string" && c.thumbnailUrl.trim())
-              ? c.thumbnailUrl.trim()
-              : (typeof c?.thumbUrl === "string" && c.thumbUrl.trim())
-              ? c.thumbUrl.trim()
-              : (typeof p?.courseThumbUrl === "string" && p.courseThumbUrl.trim())
-              ? p.courseThumbUrl.trim()
-              : null;
+            const title =
+              String(c?.title || "").trim() ||
+              String(p?.courseTitle || "").trim() ||
+              `Course: ${cid}`;
 
-          return {
-            courseId: cid,
-            title,
-            thumbUrl,
-            purchasedAt: p?.purchasedAt,
-            expiresAt: p?.expiresAt,
-            amount: Number(p?.amount ?? 0) || undefined,
-            durationLabel: (p?.durationLabel ?? null) as any,
-            durationDays: (p?.durationDays ?? null) as any,
-          };
-        });
+            const thumbUrl =
+              (typeof c?.thumbnailUrl === "string" && c.thumbnailUrl.trim())
+                ? c.thumbnailUrl.trim()
+                : (typeof c?.thumbUrl === "string" && c.thumbUrl.trim())
+                ? c.thumbUrl.trim()
+                : (typeof p?.courseThumbUrl === "string" && p.courseThumbUrl.trim())
+                ? p.courseThumbUrl.trim()
+                : null;
 
-        // newest first
+            return {
+              courseId: cid,
+              title,
+              thumbUrl,
+              purchasedAt: p?.purchasedAt,
+              expiresAt: p?.expiresAt,
+              amount: Number(p?.amount ?? 0) || undefined,
+              durationLabel: (p?.durationLabel ?? null) as any,
+              durationDays: (p?.durationDays ?? null) as any,
+            };
+          });
+
         merged.sort((a, b) => {
           const da = toDateSafe(a.purchasedAt)?.getTime() ?? 0;
           const dbb = toDateSafe(b.purchasedAt)?.getTime() ?? 0;
@@ -275,13 +348,21 @@ export default function PurchasesPage() {
     };
   }, [user?.uid, loading]);
 
-  // =========================
-  // Derived lists
-  // =========================
-  // ✅ “Худалдан авалтын түүх” дотор PAID-г харуулахгүй
   const historyRows = useMemo(() => {
-    return rows.filter((r) => String(r.status ?? "").toUpperCase() !== "PAID");
-  }, [rows]);
+    return rows
+      // ✅ PAID-г гаргахгүй (хуучин логик)
+      .filter((r) => String(r.status ?? "").toUpperCase() !== "PAID")
+      // ✅ ARCHIVED-г огт харуулахгүй
+      .filter((r) => String(r.status ?? "").toUpperCase() !== "ARCHIVED")
+      // ✅ course устсан бол харуулахгүй (courseId байвал шалгана)
+      .filter((r) => {
+        const cid = String(r.courseId || "").trim();
+        if (!cid) return true; // courseId байхгүй бол нуухгүй
+        const ex = courseExists[cid];
+        if (ex === false) return false; // deleted -> hide
+        return true; // unknown/true -> show
+      });
+  }, [rows, courseExists]);
 
   const pendingCount = useMemo(() => {
     return historyRows.filter((r) => String(r.status).toUpperCase() === "PENDING").length;
@@ -303,27 +384,35 @@ export default function PurchasesPage() {
     );
   }
 
+  const mobileText = "text-black sm:text-white";
+
   return (
-    <div className="min-h-[calc(100vh-80px)] text-white">
+    <div className={`min-h-[calc(100vh-80px)] ${mobileText}`}>
       <div className="mx-auto max-w-3xl px-4 sm:px-6 pt-8 pb-14">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+            <h1 className="text-[28px] leading-[1.05] font-black tracking-tight sm:text-2xl sm:font-extrabold sm:tracking-tight">
               Худалдан авалтын түүх
             </h1>
           </div>
 
           {pendingCount > 0 && (
-            <div className="rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
+            <div className="rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-700 sm:border-amber-500/25 sm:bg-amber-500/10 sm:text-amber-200">
               {pendingCount} хүлээгдэж байна
             </div>
           )}
         </div>
 
-        {/* =========================================================
+        {/* =========================
             1) History (PAID биш зүйлс)
-        ========================================================= */}
-        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
+        ========================= */}
+        <div
+          className="
+            mt-5
+            bg-transparent border-0 p-0 rounded-none
+            sm:rounded-2xl sm:border sm:border-white/10 sm:bg-black/20 sm:p-4
+          "
+        >
           {err && (
             <div className="mb-3 rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-200">
               {err}
@@ -331,16 +420,16 @@ export default function PurchasesPage() {
           )}
 
           <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold text-white/85">
+            <div className="text-sm font-semibold text-black/90 sm:text-white/85">
               Худалдан авалтын түүх
             </div>
-            <div className="text-xs text-white/45">
+            <div className="text-xs text-black/60 sm:text-white/45">
               {historyRows.length ? `${historyRows.length} бичлэг` : ""}
             </div>
           </div>
 
           {historyRows.length === 0 ? (
-            <div className="py-8 text-center text-white/60">
+            <div className="py-8 text-center text-black/70 sm:text-white/60">
               Одоогоор худалдан авалтын түүх байхгүй байна.
             </div>
           ) : (
@@ -349,24 +438,25 @@ export default function PurchasesPage() {
                 const st = String(r.status ?? "").toUpperCase();
                 const canContinue = st === "PENDING";
 
-                // ✅ Pending үед он сар биш "хугацаа" харуулна
-                const metaText =
-                  st === "PENDING"
-                    ? durationText(r.durationLabel ?? null, r.durationDays ?? null)
-                    : fmt(r.createdAt);
-
                 const thumb = (r.courseThumbUrl || "").trim();
                 const hasThumb = Boolean(thumb);
+
+                const dur = durationText(r.durationLabel ?? null, r.durationDays ?? null);
 
                 return (
                   <div
                     key={r.id}
-                    className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                    className="
+                      rounded-2xl
+                      border border-black/15 bg-white/70
+                      p-4
+                      sm:border-white/10 sm:bg-white/5
+                    "
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div className="min-w-0 flex items-start gap-3">
                         <div className="shrink-0">
-                          <div className="h-11 w-11 overflow-hidden rounded-xl bg-white/10">
+                          <div className="h-11 w-11 overflow-hidden rounded-xl bg-black/5 sm:bg-white/10">
                             {hasThumb ? (
                               <Image
                                 src={thumb}
@@ -382,43 +472,73 @@ export default function PurchasesPage() {
                         </div>
 
                         <div className="min-w-0">
-                          <div className="truncate text-[15px] sm:text-[16px] font-bold text-white/90">
+                          <div className="truncate text-[15px] font-bold text-black sm:text-[16px] sm:font-bold sm:text-white/90">
                             {r.courseTitle?.trim() ||
                               (r.courseId ? `Course: ${r.courseId}` : "—")}
                           </div>
 
-                          <div className="mt-1 flex items-center gap-2">
-                            <div className="text-xs text-white/55">
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <div className="text-[11px] font-medium text-black/70 sm:text-xs sm:text-white/55">
                               #{r.id.slice(0, 8).toUpperCase()}
                             </div>
 
                             <span
-                              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badge(
-                                r.status
-                              )}`}
+                              className={`inline-flex items-center rounded-full border
+                                px-2 py-[2px] leading-none text-[11px]
+                                sm:px-2 sm:py-0.5 sm:leading-normal sm:text-[11px]
+                                ${badge(r.status)}`}
                             >
                               {label(r.status)}
                             </span>
                           </div>
 
-                          <div className="mt-1 text-xs text-white/55">
-                            {metaText}
+                          {/* ✅ Desktop дээр хуучин meta хэвээр */}
+                          <div className="mt-1 hidden text-xs text-white/55 sm:block">
+                            {st === "PENDING" ? dur : fmt(r.createdAt)}
                           </div>
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0">
-                        <div className="text-sm font-bold">{money(r.amount)}</div>
+                      <div className="sm:text-right sm:shrink-0">
+                        {/* ✅ Desktop дээр үнэ хуучнаараа */}
+                        <div className="hidden text-sm font-bold text-white sm:block">
+                          {money(r.amount)}
+                        </div>
 
+                        {/* ✅ MOBILE: “45 хоног / 100₮” — хугацаа бүдэг, үнэ тод */}
+                        <div className="mt-2 flex items-center justify-center gap-2 sm:hidden">
+                          <span className="text-[16px] font-semibold text-black/45">
+                            {dur}
+                          </span>
+                          <span className="text-[14px] font-semibold text-black/25">/</span>
+                          <span className="text-[18px] leading-none font-black text-black">
+                            {money(r.amount)}
+                          </span>
+                        </div>
+
+                        {/* ✅ MOBILE: “Худалдан авах” шиг blue gradient + stroke + white text */}
                         {canContinue ? (
                           <Link
                             href={`/pay/${r.id}`}
-                            className="mt-2 inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs hover:bg-white/15 transition"
+                            className="
+                              mt-3
+                              inline-flex w-full items-center justify-center
+                              rounded-2xl
+                              border border-blue-600/60
+                              bg-gradient-to-r from-cyan-500 to-blue-600
+                              px-4 py-3 text-[13px] font-extrabold text-white
+                              shadow-[0_10px_28px_rgba(37,99,235,0.25)]
+                              active:scale-[0.99]
+                              transition
+                              sm:mt-2 sm:w-auto sm:rounded-xl sm:border-white/15 sm:bg-white/10 sm:px-3 sm:py-2 sm:text-xs sm:font-semibold sm:text-white sm:shadow-none sm:active:scale-100
+                            "
                           >
                             Төлбөр үргэлжлүүлэх
                           </Link>
                         ) : (
-                          <div className="mt-2 text-xs text-white/45">—</div>
+                          <div className="mt-3 text-center text-xs font-medium text-black/50 sm:mt-2 sm:text-right sm:text-white/45">
+                            —
+                          </div>
                         )}
                       </div>
                     </div>
@@ -429,10 +549,16 @@ export default function PurchasesPage() {
           )}
         </div>
 
-        {/* =========================================================
+        {/* =========================
             2) Purchased Courses (user.purchases)
-        ========================================================= */}
-        <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-3 sm:p-4">
+        ========================= */}
+        <div
+          className="
+            mt-6
+            bg-transparent border-0 p-0 rounded-none
+            sm:rounded-2xl sm:border sm:border-white/10 sm:bg-black/20 sm:p-4
+          "
+        >
           {pErr && (
             <div className="mb-3 rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-200">
               {pErr}
@@ -440,16 +566,16 @@ export default function PurchasesPage() {
           )}
 
           <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold text-white/85">
+            <div className="text-sm font-semibold text-black/90 sm:text-white/85">
               Худалдаж авсан хичээлүүд
             </div>
-            <div className="text-xs text-white/45">
+            <div className="text-xs text-black/60 sm:text-white/45">
               {purchased.length ? `${purchased.length} хичээл` : ""}
             </div>
           </div>
 
           {purchased.length === 0 ? (
-            <div className="py-8 text-center text-white/60">
+            <div className="py-8 text-center text-black/70 sm:text-white/60">
               Одоогоор худалдаж авсан хичээл алга байна.
             </div>
           ) : (
@@ -462,12 +588,17 @@ export default function PurchasesPage() {
                 return (
                   <div
                     key={c.courseId}
-                    className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                    className="
+                      rounded-2xl
+                      border border-black/15 bg-white/70
+                      p-4
+                      sm:border-white/10 sm:bg-white/5
+                    "
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div className="min-w-0 flex items-start gap-3">
                         <div className="shrink-0">
-                          <div className="h-11 w-11 overflow-hidden rounded-xl bg-white/10">
+                          <div className="h-11 w-11 overflow-hidden rounded-xl bg-black/5 sm:bg-white/10">
                             {c.thumbUrl ? (
                               <Image
                                 src={c.thumbUrl}
@@ -483,36 +614,41 @@ export default function PurchasesPage() {
                         </div>
 
                         <div className="min-w-0">
-                          <div className="truncate text-[15px] sm:text-[16px] font-bold text-white/90">
+                          <div className="truncate text-[15px] font-bold text-black sm:text-[16px] sm:font-bold sm:text-white/90">
                             {c.title}
                           </div>
 
-                          <div className="mt-1 text-xs text-white/55">
+                          <div className="mt-1 text-[12px] font-medium text-black/70 sm:text-xs sm:text-white/55">
                             Нээсэн цаг: {fmt(c.purchasedAt)}
                           </div>
 
-                          <div className="mt-1 text-xs text-white/40">
+                          <div className="mt-1 text-[12px] font-medium text-black/55 sm:text-xs sm:text-white/40">
                             {dur}
                           </div>
 
-                          {/* ✅ expired үед дууссан огноог тодорхой харуулна */}
                           {expired && (
-                            <div className="mt-1 text-xs text-white/45">
+                            <div className="mt-1 text-[12px] font-medium text-black/60 sm:text-xs sm:text-white/45">
                               Дууссан огноо: {ex ? fmtExpire(ex) : "—"}
                             </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0">
+                      <div className="flex justify-end sm:text-right sm:shrink-0">
                         {expired ? (
-                          <span className="inline-flex items-center rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs text-white/70">
+                          <span className="inline-flex items-center rounded-xl border border-black/15 bg-black/5 px-3 py-2 text-xs font-semibold text-black/70 sm:border-white/15 sm:bg-white/10 sm:text-white/70">
                             Хугацаа дууссан
                           </span>
                         ) : (
                           <Link
                             href={`/course/${c.courseId}`}
-                            className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs hover:bg-white/15 transition"
+                            className="
+                              inline-flex items-center justify-center
+                              rounded-xl border border-black/20 bg-black/5
+                              px-3 py-2 text-[12px] font-semibold text-black
+                              hover:bg-black/10 transition
+                              sm:border-white/15 sm:bg-white/10 sm:text-xs sm:text-white
+                            "
                           >
                             Сургалт руу очих
                           </Link>
