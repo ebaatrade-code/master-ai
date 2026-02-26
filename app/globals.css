@@ -6,22 +6,44 @@
    GLOBAL FONT (Mulish)
 ================================ */
 :root {
-  --font-main: var(--font-main), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  --font-main: var(--font-main), system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Arial, sans-serif;
+}
 
+/* ================================
+   ✅ FORCE ALL TEXT = BLACK (GLOBAL)
+   - Component бүрийг оролдохгүй
+   - text-white / md:text-white гэх мэтийг хүртэл дарна
+================================ */
+:root {
+  /* text tokens -> BLACK */
+  --text-strong: rgba(0, 0, 0, 0.94);
+  --text-body: rgba(0, 0, 0, 0.86);
+  --text-muted: rgba(0, 0, 0, 0.62);
+}
+
+/* Бүх текстийг хар болгох (хамгийн найдвартай) */
+/* Зөвхөн хүссэн wrapper дээрээ force-black тавина */
+.force-black,
+.force-black * {
+  color: #000 !important;
+}
+
+/* Inputs / placeholders ч мөн адил */
+input,
+textarea,
+select,
+option,
+input::placeholder,
+textarea::placeholder {
+  color: #000 !important;
 }
 
 /* ================================
    MOBILE DEFAULT = WHITE THEME
-   (Desktop дээр md+ үед dark болгож override хийнэ)
 ================================ */
-
-/* MOBILE: цагаан суурь + хар текст */
 :root {
   color-scheme: light;
-
-  --text-strong: rgba(0, 0, 0, 0.94);
-  --text-body: rgba(0, 0, 0, 0.86);
-  --text-muted: rgba(0, 0, 0, 0.62);
 
   /* Brand tokens (утастай үед ч хэрэгтэй бол үлдээнэ) */
   --bg-0: #ffffff;
@@ -51,8 +73,6 @@ body {
   background: #ffffff !important;
   background-image: none !important;
 
-  color: var(--text-body) !important;
-
   /* ✅ GLOBAL FONT (COMPUTER + MOBILE) */
   font-family: var(--font-main) !important;
 
@@ -66,15 +86,13 @@ body {
 }
 
 /* ================================
-   DESKTOP (md+) = DARK THEME (хуучин чинь хэвээр)
+   DESKTOP (md+) = DARK THEME
+   (background хэвээр, харин текстийг хар болгож дарна)
 ================================ */
 @media (min-width: 768px) {
   :root {
+    /* ✅ desktop дээр ч текст BLACK хэвээр */
     color-scheme: dark;
-
-    --text-strong: rgba(255, 255, 255, 0.94);
-    --text-body: rgba(255, 255, 255, 0.88);
-    --text-muted: rgba(255, 255, 255, 0.70);
 
     --bg-0: #07080b;
     --bg-1: rgba(10, 10, 14, 0.86);
@@ -91,9 +109,8 @@ body {
 
   body {
     background: #0b0b0f !important;
-    color: var(--text-body) !important;
 
-    /* ✅ DESKTOP дээр л hero-bg ажиллана */
+    /* ✅ DESKTOP дээр л hero-bg ажиллана (хэвээр) */
     background-image: url("/hero/hero-bg.png") !important;
     background-repeat: no-repeat !important;
     background-position: center !important;
@@ -105,16 +122,31 @@ body {
 /* ================================
    TYPOGRAPHY SYSTEM
 ================================ */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-weight: 600;
-  color: var(--text-strong);
   letter-spacing: -0.01em;
   line-height: 1.25;
 }
 
-h1 { font-size: 32px; line-height: 1.18; }
-h2 { font-size: 24px; line-height: 1.22; letter-spacing: -0.008em; }
-h3 { font-size: 18px; line-height: 1.28; letter-spacing: -0.006em; }
+h1 {
+  font-size: 32px;
+  line-height: 1.18;
+}
+h2 {
+  font-size: 24px;
+  line-height: 1.22;
+  letter-spacing: -0.008em;
+}
+h3 {
+  font-size: 18px;
+  line-height: 1.28;
+  letter-spacing: -0.006em;
+}
 
 label,
 button,
@@ -136,14 +168,11 @@ textarea {
 }
 
 /* Forms */
-input, textarea, select {
+input,
+textarea,
+select {
   font-size: 14px;
   font-weight: 400;
-  color: var(--text-strong) !important;
-}
-
-input::placeholder, textarea::placeholder {
-  color: color-mix(in srgb, var(--text-strong) 55%, transparent) !important;
 }
 
 /* ================================
@@ -167,15 +196,26 @@ body::after {
 .page-shell {
   position: relative;
   min-height: 100vh;
-  background: radial-gradient(1200px 700px at 50% 0%, rgba(244, 210, 122, 0.12), transparent 55%),
-              radial-gradient(900px 520px at 10% 20%, rgba(255,255,255,0.06), transparent 55%),
-              rgba(0,0,0,0.00);
+  background: radial-gradient(
+      1200px 700px at 50% 0%,
+      rgba(244, 210, 122, 0.12),
+      transparent 55%
+    ),
+    radial-gradient(
+      900px 520px at 10% 20%,
+      rgba(255, 255, 255, 0.06),
+      transparent 55%
+    ),
+    rgba(0, 0, 0, 0.00);
 }
 
-.page-wrap { position: relative; z-index: 1; }
+.page-wrap {
+  position: relative;
+  z-index: 1;
+}
 
 .glass {
-  background: linear-gradient(to bottom, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.04));
   border: 1px solid var(--border);
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(14px);
@@ -183,25 +223,24 @@ body::after {
 }
 
 .glass-inner {
-  background: rgba(0,0,0,0.12);
+  background: rgba(0, 0, 0, 0.12);
   border: 1px solid var(--border);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
 
 .soft-glow {
-  box-shadow:
-    0 18px 60px rgba(0,0,0,0.10),
-    0 0 0 1px rgba(0,0,0,0.06),
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.10), 0 0 0 1px rgba(0, 0, 0, 0.06),
     0 0 46px rgba(244, 210, 122, 0.10);
 }
 
 @media (min-width: 768px) {
-  .glass-inner { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.10); }
+  .glass-inner {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+  }
   .soft-glow {
-    box-shadow:
-      0 18px 60px rgba(0,0,0,0.55),
-      0 0 0 1px rgba(255,255,255,0.08),
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08),
       0 0 46px rgba(244, 210, 122, 0.12);
   }
 }
@@ -209,29 +248,38 @@ body::after {
 /* Buttons */
 .btn-gold {
   background: linear-gradient(135deg, var(--gold), var(--gold-2));
-  color: #111;
-  border: 1px solid rgba(0,0,0,0.15);
+  color: #111 !important;
+  border: 1px solid rgba(0, 0, 0, 0.15);
   box-shadow: 0 16px 40px rgba(244, 210, 122, 0.18);
 }
-.btn-gold:hover { filter: brightness(1.03); }
-.btn-gold:active { transform: translateY(1px); }
+.btn-gold:hover {
+  filter: brightness(1.03);
+}
+.btn-gold:active {
+  transform: translateY(1px);
+}
 
 .btn-ghost {
-  background: rgba(0,0,0,0.04);
-  border: 1px solid rgba(0,0,0,0.12);
-  color: rgba(0,0,0,0.86);
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  color: #000 !important;
 }
 @media (min-width: 768px) {
   .btn-ghost {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.14);
-    color: rgba(255,255,255,0.90);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #000 !important;
   }
 }
 
 /* VIDEO — HIDE DOWNLOAD / PiP */
-video::-webkit-media-controls-download-button { display: none !important; }
-video::-webkit-media-controls-picture-in-picture-button { display: none !important; }
+video::-webkit-media-controls-download-button {
+  display: none !important;
+}
+video::-webkit-media-controls-picture-in-picture-button {
+  display: none !important;
+}
+
 /* ================================
    MOBILE ONLY polish (<= 767px)
    Desktop-г огт өөрчлөхгүй
@@ -250,37 +298,24 @@ video::-webkit-media-controls-picture-in-picture-button { display: none !importa
     width: 100% !important;
     justify-content: center !important;
     display: inline-flex !important;
-    background: linear-gradient(180deg, rgba(255,138,0,0.95), rgba(255,138,0,0.80)) !important;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 138, 0, 0.95),
+      rgba(255, 138, 0, 0.80)
+    ) !important;
     color: #111 !important;
-    box-shadow: 0 12px 30px rgba(255,138,0,0.20) !important;
+    box-shadow: 0 12px 30px rgba(255, 138, 0, 0.20) !important;
   }
 }
+
 /* ================================
    MOBILE ONLY — Watch lesson page text -> BLACK
    (desktop-г огт эвдэхгүй)
 ================================ */
 @media (max-width: 767px) {
-  /* Lesson viewer хэсэгт нийт текст */
   .lesson-viewer,
   .lesson-viewer * {
-    color: rgba(0, 0, 0, 0.88) !important;
-  }
-
-  /* title/strong */
-  .lesson-viewer h1,
-  .lesson-viewer h2,
-  .lesson-viewer h3,
-  .lesson-viewer .title,
-  .lesson-viewer .type-page-title,
-  .lesson-viewer .type-section,
-  .lesson-viewer .type-card-title {
-    color: rgba(0, 0, 0, 0.94) !important;
-  }
-
-  /* muted текст */
-  .lesson-viewer .muted,
-  .lesson-viewer .type-muted,
-  .lesson-viewer .type-label {
-    color: rgba(0, 0, 0, 0.62) !important;
+    color: #000 !important;
   }
 }
+

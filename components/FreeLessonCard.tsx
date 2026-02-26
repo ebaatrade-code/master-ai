@@ -20,7 +20,7 @@ export default function FreeLessonCard({ lesson, href }: Props) {
   const wrapProps = href ? { href } : {};
 
   // ✅ MOBILE: white card
-  // ✅ DESKTOP (md+): original dark premium card
+  // ✅ DESKTOP (md+): original dark premium card (kept)
   const cardBase =
     "group block relative overflow-hidden rounded-3xl " +
     "bg-white border-2 border-black/10 " +
@@ -71,36 +71,31 @@ export default function FreeLessonCard({ lesson, href }: Props) {
         </div>
 
         {/* ✅ Lock badge */}
-        <div className="absolute right-3 top-3 z-30 rounded-full border border-black/10 bg-white/85 px-3 py-1 text-[11px] font-semibold text-black/80 md:border-red-400/30 md:bg-black/60 md:text-red-100/90">
+        <div className="absolute right-3 top-3 z-30 rounded-full border border-white/10 bg-white/85 px-3 py-1 text-[11px] font-semibold text-white/80 md:border-red-400/30 md:bg-white/60 md:text-red-100/90">
           🔒 Нэвтэрсэн хэрэглэгч
         </div>
       </div>
 
-      {/* BODY */}
-      <div className="p-4">
-        <div className="text-[11px] text-black/55 md:text-white/55">
+      {/* BODY — ✅ always white background (mobile + desktop) */}
+      <div className="rounded-b-3xl bg-white p-4">
+        <div className="text-[11px] text-black/55">
           {"2026 • Үнэгүй хичээл"}
         </div>
 
-        <div className="mt-2 text-base font-extrabold text-black/90 line-clamp-1 md:text-white/90">
+        <div className="mt-2 line-clamp-1 text-base font-extrabold text-black/90">
           {lesson.title}
         </div>
 
-        <div className="mt-2 text-sm text-black/60 line-clamp-2 md:text-white/60">
+        <div className="mt-2 line-clamp-2 text-sm text-black/60">
           Нэвтэрсэн хэрэглэгч л үзэх боломжтой үнэгүй контент.
         </div>
 
         <div className="mt-4 flex items-end justify-between gap-3">
           <div>
-            <div className="text-lg font-extrabold text-black md:text-white">
-              Үнэгүй
-            </div>
-            <div className="text-xs text-black/45 md:text-white/45">
-              Login required
-            </div>
+            <div className="text-lg font-extrabold text-black">Үнэгүй</div>
           </div>
 
-          <div className="rounded-full border border-black/10 bg-black/5 px-3 py-1 text-xs text-black/70 md:border-red-400/20 md:bg-red-500/10 md:text-red-100/80">
+          <div className="rounded-full border border-black/10 bg-black/5 px-3 py-1 text-xs text-black/70">
             🔒 Free
           </div>
         </div>
@@ -122,7 +117,7 @@ export default function FreeLessonCard({ lesson, href }: Props) {
             md:hover:from-red-400 md:hover:to-rose-500
           "
         >
-          ҮЗЭХ →
+          ҮЗЭХ 
         </div>
       </div>
     </CardWrap>

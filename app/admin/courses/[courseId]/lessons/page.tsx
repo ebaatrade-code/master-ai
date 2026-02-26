@@ -20,6 +20,7 @@ import { useAuth } from "@/components/AuthProvider";
 type Lesson = {
   id: string;
   title: string;
+  description?: string; // ✅ NEW: lesson тайлбар
   order: number;
   durationSec?: number;
   isFreePreview: boolean;
@@ -39,6 +40,7 @@ type Lesson = {
 
 type FormState = {
   title: string;
+  description: string; // ✅ NEW
   videoPath: string; // optional болж байна (upload хийвэл автоматаар fill)
   order: number | string;
   durationSec: number | string;
@@ -48,6 +50,7 @@ type FormState = {
 
 const emptyForm: FormState = {
   title: "",
+  description: "", // ✅ NEW
   videoPath: "",
   order: 1,
   durationSec: "",
@@ -56,8 +59,6 @@ const emptyForm: FormState = {
 };
 
 function makeUploadId() {
-  // UUID байвал сайн, байхгүй бол Date.now ашиглана
-  // (Chrome/Edge дээр crypto.randomUUID байдаг)
   // @ts-ignore
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     // @ts-ignore
@@ -171,27 +172,24 @@ export default function AdminLessonsPage() {
     setUploading(false);
     setUploadPct(0);
     setLastUploadedPath("");
-    setDurationAuto(false); // ✅ NEW
+    setDurationAuto(false);
   };
 
   const onSubmit = async () => {
     if (!lessonsRef) return;
 
     const title = (form.title || "").trim();
+    const description = (form.description ?? "").trim(); // ✅ NEW
     const orderNum = Number(form.order);
     const durationNum =
       form.durationSec === "" || form.durationSec == null
         ? undefined
         : Number(form.durationSec);
 
-    // ✅ videoPath-ийг заавал шаардахгүй болголоо
-    // - file upload хийсэн бол автоматаар орно
-    // - эсвэл гараар path өгч болно
     const videoPath = (form.videoPath || "").trim();
 
     if (!title) return alert("Title заавал!");
-    if (!Number.isFinite(orderNum))
-      return alert("Order тоо байх ёстой!");
+    if (!Number.isFinite(orderNum)) return alert("Order тоо байх ёстой!");
     if (durationNum !== undefined && !Number.isFinite(durationNum))
       return alert("durationSec буруу байна!");
 
@@ -205,17 +203,22 @@ export default function AdminLessonsPage() {
         updatedAt: serverTimestamp(),
       };
 
+      // ✅ NEW: description хадгална
+      payload.description = description;
+
       if (durationNum !== undefined) payload.durationSec = durationNum;
       if (videoPath) payload.videoPath = videoPath;
 
       if (!editingId) {
-        // ✅ create (Firestore auto id)
         await addDoc(lessonsRef, {
           ...payload,
           createdAt: serverTimestamp(),
         });
+
+        // ✅ IMPORTANT:
+        // Lesson нэмэгдэх үед notification явуулахыг БҮРЭН болиуллаа.
+        // Шинэ course үүсэх үед л notification явах ёстой.
       } else {
-        // ✅ update
         await updateDoc(doc(lessonsRef, editingId), payload);
       }
 
@@ -234,6 +237,7 @@ export default function AdminLessonsPage() {
     setEditingId(l.id);
     setForm({
       title: l.title ?? "",
+      description: (l.description ?? "") as string, // ✅ NEW
       videoPath: (l.videoPath ?? l.video?.storagePath ?? "") as string,
       order: l.order ?? 1,
       durationSec: l.durationSec ?? "",
@@ -243,7 +247,7 @@ export default function AdminLessonsPage() {
     setSelectedFile(null);
     setUploadPct(0);
     setLastUploadedPath("");
-    setDurationAuto(false); // ✅ NEW (Edit дархад гараар засах боломж хэвээр үлдээнэ)
+    setDurationAuto(false);
   };
 
   const onDelete = async (id: string) => {
@@ -267,9 +271,7 @@ export default function AdminLessonsPage() {
   const uploadMp4ToLesson = async () => {
     if (!lessonsRef) return;
     if (!editingId) {
-      alert(
-        "Эхлээд lesson-ээ Create хийгээд, дараа нь Edit дарж байж Upload хийнэ."
-      );
+      alert("Эхлээд lesson-ээ Create хийгээд, дараа нь Edit дарж байж Upload хийнэ.");
       return;
     }
     if (!selectedFile) {
@@ -277,7 +279,6 @@ export default function AdminLessonsPage() {
       return;
     }
     if (!selectedFile.type.includes("mp4")) {
-      // Зарим mp4 дээр type хоосон байдаг тохиолдол бий — тэгвэл нэрээр нь зөвшөөрч болно
       const okByName = selectedFile.name.toLowerCase().endsWith(".mp4");
       if (!okByName) return alert("Зөвхөн .mp4 файл сонго!");
     }
@@ -309,13 +310,11 @@ export default function AdminLessonsPage() {
 
       const url = await getDownloadURL(task.snapshot.ref);
 
-      // ✅ NEW: durationSec-ийг form дээрээс (auto-fill болсон) авч хадгална
       const durationNum =
         form.durationSec === "" || form.durationSec == null
           ? undefined
           : Number(form.durationSec);
 
-      // ✅ Firestore дээр стандарт бичилт
       const updatePayload: any = {
         videoPath: storagePath, // backward compatible
         video: {
@@ -329,14 +328,12 @@ export default function AdminLessonsPage() {
         updatedAt: serverTimestamp(),
       };
 
-      // ✅ NEW: durationSec зөв тоо байвал Firestore-д бичнэ
       if (durationNum !== undefined && Number.isFinite(durationNum)) {
         updatePayload.durationSec = durationNum;
       }
 
       await updateDoc(doc(lessonsRef, editingId), updatePayload);
 
-      // UI дээр form.videoPath автоматаар fill
       setForm((p) => ({ ...p, videoPath: storagePath }));
       setLastUploadedPath(storagePath);
 
@@ -359,33 +356,55 @@ export default function AdminLessonsPage() {
     <div className="mx-auto max-w-5xl px-6 py-10">
       <button
         onClick={() => router.push("/admin")}
-        className="mb-4 text-sm text-white/60 hover:text-white"
+        className="mb-4 text-sm text-black/60 hover:text-black"
       >
         ← Admin буцах
       </button>
 
       <h1 className="text-2xl font-bold">Lessons – {courseId}</h1>
-      <p className="mt-2 text-sm text-white/60">
+      <p className="mt-2 text-sm text-black/60">
         Course-ийн lesson-уудыг энд нэмнэ/засна.
       </p>
 
       {/* FORM */}
-      <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div className="mt-6 rounded-2xl border border-black/10 bg-white/5 p-5">
         <div className="grid gap-4 md:grid-cols-2">
+          {/* ✅ Title */}
           <div className="md:col-span-2">
-            <label className="text-sm text-white/70">Lesson title</label>
+            <label className="text-sm text-black/70">Lesson title</label>
             <input
               value={form.title}
               onChange={(e) =>
                 setForm((p) => ({ ...p, title: e.target.value }))
               }
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+              className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
               placeholder="Хичээл 1 — Танилцуулга"
             />
           </div>
 
+          {/* ✅ NEW: Description (Гарчигны доор) */}
           <div className="md:col-span-2">
-            <label className="text-sm text-white/70">
+            <label className="text-sm text-black/70">
+              Lesson description (тайлбар)
+            </label>
+            <textarea
+              value={form.description}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, description: e.target.value }))
+              }
+              rows={5}
+              className="mt-1 w-full resize-y rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
+              placeholder={`Тайлбар бичнэ... (Enter дарвал шинэ мөр) \nLink оруулж болно: https://example.com`}
+            />
+            <div className="mt-1 text-xs text-black/50">
+              Enter → шинэ мөр хадгалагдана. (Хэрэглэгчийн тал дээр line break зөв
+              харагдана.)
+            </div>
+          </div>
+
+          {/* VideoPath */}
+          <div className="md:col-span-2">
+            <label className="text-sm text-black/70">
               VideoPath (Storage path) — (Upload хийвэл автоматаар бөглөнө)
             </label>
             <input
@@ -393,20 +412,20 @@ export default function AdminLessonsPage() {
               onChange={(e) =>
                 setForm((p) => ({ ...p, videoPath: e.target.value }))
               }
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+              className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
               placeholder={`videos/courses/${courseId}/lessons/<lessonId>/<uploadId>.mp4`}
             />
-            <div className="mt-1 text-xs text-white/50">
+            <div className="mt-1 text-xs text-black/50">
               Энэ нь Storage дээрх зам. (URL биш, path байвал clean)
             </div>
           </div>
 
           {/* UPLOAD BOX */}
-          <div className="md:col-span-2 rounded-xl border border-white/10 bg-black/30 p-4">
-            <div className="text-sm font-semibold text-white/80">
+          <div className="md:col-span-2 rounded-xl border border-black/10 bg-black/30 p-4">
+            <div className="text-sm font-semibold text-black/80">
               MP4 Upload (Storage)
             </div>
-            <div className="mt-1 text-xs text-white/50">
+            <div className="mt-1 text-xs text-black/50">
               Upload хийхийн тулд <b>Edit</b> горимд (lessonId байгаа үед)
               ажиллана.
             </div>
@@ -420,7 +439,6 @@ export default function AdminLessonsPage() {
                   const file = e.target.files?.[0] || null;
                   setSelectedFile(file);
 
-                  // ✅ NEW: файл сонгох үед duration автоматаар бөглөнө
                   if (!file) {
                     setForm((p) => ({ ...p, durationSec: "" }));
                     setDurationAuto(false);
@@ -432,11 +450,10 @@ export default function AdminLessonsPage() {
                     setForm((p) => ({ ...p, durationSec: sec }));
                     setDurationAuto(true);
                   } catch {
-                    // metadata уншиж чадсангүй — гараар бичих боломж үлдээнэ
                     setDurationAuto(false);
                   }
                 }}
-                className="block w-full text-sm text-white/70 file:mr-4 file:rounded-xl file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-white file:hover:bg-white/15"
+                className="block w-full text-sm text-black/70 file:mr-4 file:rounded-xl file:border-0 file:bg-white/10 file:px-4 file:py-2 file:text-black file:hover:bg-white/15"
               />
 
               <button
@@ -467,17 +484,19 @@ export default function AdminLessonsPage() {
           </div>
 
           <div>
-            <label className="text-sm text-white/70">Order</label>
+            <label className="text-sm text-black/70">Order</label>
             <input
               value={form.order}
-              onChange={(e) => setForm((p) => ({ ...p, order: e.target.value }))}
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+              onChange={(e) =>
+                setForm((p) => ({ ...p, order: e.target.value }))
+              }
+              className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
               placeholder="1"
             />
           </div>
 
           <div>
-            <label className="text-sm text-white/70">
+            <label className="text-sm text-black/70">
               Duration (sec) optional
             </label>
             <input
@@ -485,12 +504,12 @@ export default function AdminLessonsPage() {
               onChange={(e) =>
                 setForm((p) => ({ ...p, durationSec: e.target.value }))
               }
-              readOnly={durationAuto} // ✅ NEW: auto бөглөгдвөл гараар бичихгүй
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+              readOnly={durationAuto}
+              className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
               placeholder="600"
             />
             {durationAuto && (
-              <div className="mt-1 text-[11px] text-white/40">
+              <div className="mt-1 text-[11px] text-black/40">
                 MP4 metadata-с автоматаар бөглөгдсөн ✅
               </div>
             )}
@@ -505,7 +524,7 @@ export default function AdminLessonsPage() {
                 setForm((p) => ({ ...p, isFreePreview: e.target.checked }))
               }
             />
-            <label htmlFor="free" className="text-sm text-white/70">
+            <label htmlFor="free" className="text-sm text-black/70">
               isFreePreview (login хийсэн хүн үзнэ)
             </label>
           </div>
@@ -519,7 +538,7 @@ export default function AdminLessonsPage() {
                 setForm((p) => ({ ...p, isPublished: e.target.checked }))
               }
             />
-            <label htmlFor="pub" className="text-sm text-white/70">
+            <label htmlFor="pub" className="text-sm text-black/70">
               isPublished
             </label>
           </div>
@@ -552,9 +571,9 @@ export default function AdminLessonsPage() {
         </div>
 
         {editingId && (
-          <div className="mt-2 text-xs text-white/50">
+          <div className="mt-2 text-xs text-black/50">
             Одоо засаж байгаа lesson id:{" "}
-            <span className="text-white/80">{editingId}</span>
+            <span className="text-black/80">{editingId}</span>
           </div>
         )}
       </div>
@@ -562,26 +581,30 @@ export default function AdminLessonsPage() {
       {/* LIST */}
       <div className="mt-8">
         <h2 className="text-lg font-semibold mb-3">Lessons</h2>
-        {busy && <div className="text-sm text-white/60 mb-2">Ажиллаж байна...</div>}
+        {busy && (
+          <div className="text-sm text-black/60 mb-2">Ажиллаж байна...</div>
+        )}
 
         <div className="grid gap-3">
           {lessons.map((l) => (
             <div
               key={l.id}
-              className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center md:justify-between"
+              className="flex flex-col gap-2 rounded-2xl border border-black/10 bg-white/5 p-4 md:flex-row md:items-center md:justify-between"
             >
               <div>
                 <div className="font-semibold">
                   {l.order}. {l.title}
                   {!l.isPublished && (
-                    <span className="ml-2 text-xs text-white/50">(hidden)</span>
+                    <span className="ml-2 text-xs text-black/50">(hidden)</span>
                   )}
                   {l.isFreePreview && (
-                    <span className="ml-2 text-xs text-emerald-300/80">(FREE)</span>
+                    <span className="ml-2 text-xs text-emerald-300/80">
+                      (FREE)
+                    </span>
                   )}
                 </div>
 
-                <div className="text-xs text-white/50">
+                <div className="text-xs text-black/50">
                   {l.videoPath || l.video?.storagePath || "(no video yet)"}
                 </div>
               </div>
@@ -606,7 +629,7 @@ export default function AdminLessonsPage() {
           ))}
 
           {lessons.length === 0 && !busy && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/70">
+            <div className="rounded-2xl border border-black/10 bg-white/5 p-6 text-black/70">
               Одоогоор lesson алга.
             </div>
           )}

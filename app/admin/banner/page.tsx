@@ -169,17 +169,17 @@ export default function AdminBannerPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <h1 className="text-2xl font-bold">Top Banner тохиргоо</h1>
-      <p className="mt-1 text-sm text-white/60">Header-ийн дээр гардаг announcement bar.</p>
+      <p className="mt-1 text-sm text-black/60">Header-ийн дээр гардаг announcement bar.</p>
 
-      <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div className="mt-6 rounded-2xl border border-black/10 bg-white/5 p-5">
         {loading ? (
-          <div className="text-sm text-white/60">Ачааллаж байна...</div>
+          <div className="text-sm text-black/60">Ачааллаж байна...</div>
         ) : (
           <>
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-semibold">Banner асаах</div>
-                <div className="text-xs text-white/60">Enabled бол сайт дээр шууд гарна.</div>
+                <div className="text-xs text-black/60">Enabled бол сайт дээр шууд гарна.</div>
               </div>
               <button
                 onClick={() => setEnabled((v) => !v)}
@@ -193,22 +193,22 @@ export default function AdminBannerPage() {
 
             <div className="mt-4 grid gap-3">
               <label className="grid gap-1">
-                <span className="text-xs text-white/70">Text</span>
+                <span className="text-xs text-black/70">Text</span>
                 <input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none"
+                  className="rounded-xl border border-black/10 bg-black/30 px-3 py-2 outline-none"
                   placeholder="🔥 48 цагийн хямдрал"
                 />
               </label>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="grid gap-1">
-                  <span className="text-xs text-white/70">Variant</span>
+                  <span className="text-xs text-black/70">Variant</span>
                   <select
                     value={variant}
                     onChange={(e) => setVariant(e.target.value as Variant)}
-                    className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none"
+                    className="rounded-xl border border-black/10 bg-black/30 px-3 py-2 outline-none"
                   >
                     <option value="promo">promo</option>
                     <option value="info">info</option>
@@ -218,12 +218,12 @@ export default function AdminBannerPage() {
                 </label>
 
                 <label className="grid gap-1">
-                  <span className="text-xs text-white/70">Cooldown (hours)</span>
+                  <span className="text-xs text-black/70">Cooldown (hours)</span>
                   <input
                     type="number"
                     value={cooldownHours}
                     onChange={(e) => setCooldownHours(Number(e.target.value))}
-                    className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none"
+                    className="rounded-xl border border-black/10 bg-black/30 px-3 py-2 outline-none"
                     min={1}
                   />
                 </label>
@@ -232,22 +232,22 @@ export default function AdminBannerPage() {
               {/* ✅ Start / End */}
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="grid gap-1">
-                  <span className="text-xs text-white/70">Start at</span>
+                  <span className="text-xs text-black/70">Start at</span>
                   <input
                     type="datetime-local"
                     value={startAtStr}
                     onChange={(e) => setStartAtStr(e.target.value)}
-                    className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none"
+                    className="rounded-xl border border-black/10 bg-black/30 px-3 py-2 outline-none"
                   />
                 </label>
 
                 <label className="grid gap-1">
-                  <span className="text-xs text-white/70">End at</span>
+                  <span className="text-xs text-black/70">End at</span>
                   <input
                     type="datetime-local"
                     value={endAtStr}
                     onChange={(e) => setEndAtStr(e.target.value)}
-                    className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none"
+                    className="rounded-xl border border-black/10 bg-black/30 px-3 py-2 outline-none"
                   />
                 </label>
               </div>
@@ -259,12 +259,12 @@ export default function AdminBannerPage() {
                   checked={dismissible}
                   onChange={(e) => setDismissible(e.target.checked)}
                 />
-                <label htmlFor="dismissible" className="text-sm text-white/80">
+                <label htmlFor="dismissible" className="text-sm text-black/80">
                   Close (✕) товч гаргах
                 </label>
               </div>
 
-              <div className="mt-2 rounded-xl border border-white/10 bg-black/20 p-4">
+              <div className="mt-2 rounded-xl border border-black/10 bg-black/20 p-4">
                 <div className="text-sm font-semibold">CTA link</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
@@ -295,11 +295,11 @@ export default function AdminBannerPage() {
 
                 {hrefType === "course" ? (
                   <div className="mt-3 grid gap-1">
-                    <span className="text-xs text-white/70">Course сонгох</span>
+                    <span className="text-xs text-black/70">Course сонгох</span>
                     <select
                       value={courseId}
                       onChange={(e) => setCourseId(e.target.value)}
-                      className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none"
+                      className="rounded-xl border border-black/10 bg-black/30 px-3 py-2 outline-none"
                     >
                       {courses.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -312,29 +312,29 @@ export default function AdminBannerPage() {
 
                 {hrefType === "url" ? (
                   <div className="mt-3 grid gap-1">
-                    <span className="text-xs text-white/70">URL</span>
+                    <span className="text-xs text-black/70">URL</span>
                     <input
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
-                      className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none"
+                      className="rounded-xl border border-black/10 bg-black/30 px-3 py-2 outline-none"
                       placeholder="https://..."
                     />
                   </div>
                 ) : null}
 
-                <div className="mt-3 text-xs text-white/60">
-                  Preview link: <span className="text-white/90">{previewHref || "-"}</span>
+                <div className="mt-3 text-xs text-black/60">
+                  Preview link: <span className="text-black/90">{previewHref || "-"}</span>
                 </div>
 
                 {/* ✅ Pages */}
                 <div className="mt-4 grid gap-1">
-                  <span className="text-xs text-white/70">
+                  <span className="text-xs text-black/70">
                     Pages (comma separated) — ж: /, /contents, /course/*
                   </span>
                   <input
                     value={pagesStr}
                     onChange={(e) => setPagesStr(e.target.value)}
-                    className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 outline-none"
+                    className="rounded-xl border border-black/10 bg-black/30 px-3 py-2 outline-none"
                     placeholder="/, /contents, /course/*"
                   />
                 </div>

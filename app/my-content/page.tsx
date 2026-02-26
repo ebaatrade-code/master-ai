@@ -13,7 +13,10 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
-import { calcCoursePercentFromProgress, getCourseProgressFS } from "@/lib/progress";
+import {
+  calcCoursePercentFromProgress,
+  getCourseProgressFS,
+} from "@/lib/progress";
 
 type Course = {
   id: string;
@@ -74,61 +77,59 @@ function PurchasedWideCard({
         {/* Right info */}
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            {/* ✅ mobile: black, desktop: orange-ish */}
-            <div className="text-sm font-extrabold tracking-wide text-black/70 md:text-orange-200/90">
+            <div className="text-sm font-extrabold tracking-wide text-black md:text-black">
               КУРС
             </div>
 
-            {/* ✅ mobile badge: light, desktop badge: dark */}
-            <div className="rounded-full border border-black/10 bg-black/[0.03] px-3 py-1 text-xs text-black/50 md:border-white/10 md:bg-white/5 md:text-white/60">
+            <div className="rounded-full border border-black/10 bg-black/[0.03] px-3 py-1 text-xs text-black md:border-black/10 md:bg-black/[0.03] md:text-black">
               • •
             </div>
           </div>
 
-          {/* ✅ title mobile black, desktop white */}
-          <div className="mt-3 text-2xl font-extrabold leading-tight text-black md:text-white">
+          <div className="mt-3 text-2xl font-extrabold leading-tight text-black md:text-black">
             {course.title || "Таны курс"}
           </div>
 
           <div className="mt-4">
-            {/* ✅ progress label */}
-            <div className="text-sm text-black/70 md:text-white/65">
+            <div className="text-sm text-black md:text-black">
               Прогресс:{" "}
-              <span className="font-extrabold text-orange-600 md:text-orange-300">
+              <span className="font-extrabold text-black md:text-black">
                 {pct}%
               </span>
             </div>
 
-            {/* ✅ progress track */}
-            <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-black/10 md:bg-white/10">
+            {/* ✅ FIX: Desktop дээр ч саарал track + улбар шар fill (цагаан болохгүй) */}
+            <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-300 ring-1 ring-black/10 shadow-inner">
               <div
-                className="h-full rounded-full transition-all bg-[linear-gradient(90deg,rgba(255,138,0,1),rgba(255,184,92,1))]"
+                className="h-full rounded-full transition-all bg-orange-500"
                 style={{ width: `${pct}%` }}
               />
             </div>
           </div>
 
-          {/* ✅ author */}
-          <div className="mt-4 text-sm text-black/60 md:text-white/55">
+          <div className="mt-4 text-sm text-black md:text-black">
             Хичээл заасан:{" "}
-            <span className="font-semibold text-black/80 md:text-white/75">
-              {course.authorName || "EbaCreator"}
+            <span className="font-semibold text-black md:text-black">
+              {course.authorName || "ebacreator"}
             </span>
           </div>
 
           <div className="mt-6 flex md:justify-end">
-  <button
-  onClick={onContinue}
-  className="
-    premium-btn
-    px-10 py-3 text-sm
-    rounded-full
-    md:rounded-xl
-  "
->
-    Үргэлжлүүлэх →
-  </button>
-</div>
+            {/* ✅ NEW: Gradient stroke wrapper (blue → purple) */}
+            <div className="rounded-full bg-gradient-to-r from-orange-400/40 via-orange-300/30 to-orange-400/40 p-[1.5px] md:rounded-xl">
+              <button
+                onClick={onContinue}
+                className="
+                  premium-btn
+                  px-10 py-3 text-sm
+                  rounded-full
+                  md:rounded-xl
+                "
+              >
+                ҮРГЭЛЖЛҮҮЛЭХ
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -155,7 +156,10 @@ export default function MyContentPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (!user) router.replace(`/login?callbackUrl=${encodeURIComponent("/my-content")}`);
+    if (!user)
+      router.replace(
+        `/login?callbackUrl=${encodeURIComponent("/my-content")}`
+      );
   }, [loading, user, router]);
 
   useEffect(() => {
@@ -176,7 +180,10 @@ export default function MyContentPage() {
         const results: Course[] = [];
 
         for (const g of groups) {
-          const qy = query(collection(db, "courses"), where(documentId(), "in", g));
+          const qy = query(
+            collection(db, "courses"),
+            where(documentId(), "in", g)
+          );
           const snap = await getDocs(qy);
           snap.forEach((d) => results.push({ id: d.id, ...(d.data() as any) }));
         }
@@ -187,7 +194,9 @@ export default function MyContentPage() {
 
         const orderMap = new Map(ids.map((id, idx) => [id, idx]));
         results.sort(
-          (a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999)
+          (a, b) =>
+            (orderMap.get(a.id) ?? 999999) -
+            (orderMap.get(b.id) ?? 999999)
         );
 
         setCourses(results);
@@ -256,52 +265,51 @@ export default function MyContentPage() {
   if (loading || !user) return null;
 
   return (
-    // ✅ mobile: black text, desktop: white text
-    <div className="mx-auto max-w-6xl px-6 py-10 min-h-[90vh] text-black md:text-white">
+    <div className="mx-auto max-w-6xl px-6 py-10 min-h-[90vh] text-black md:text-black">
       <div className="flex items-center justify-between gap-6">
-        <div className="text-3xl font-extrabold tracking-tight">
+        <div className="text-3xl font-extrabold tracking-tight text-black md:text-black">
           Миний сургалтууд
         </div>
 
         <button
-  onClick={() => router.push("/contents")}
-  className="
-    premium-btn
-    px-6 py-3 text-sm
-    rounded-[20px]
-    md:rounded-xl
-  "
->
+          onClick={() => router.push("/contents")}
+          className="
+            premium-btn
+            px-6 py-3 text-sm
+            rounded-[20px]
+            md:rounded-xl
+          "
+        >
           Бүх багц үзэх →
         </button>
       </div>
 
-      {/* ✅ Overall progress */}
       {ids.length > 0 ? (
-        <div className="mt-5 premium-card p-5">
+        <div className="mt-5 p-5 rounded-[22px] bg-[#F3F4F6] border border-black/10 shadow-[0_18px_55px_rgba(0,0,0,0.10)] md:bg-white/5 md:border-white/10 md:shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
           <div className="flex items-center justify-between">
-            <div className="text-sm font-extrabold text-black/80 md:text-white/85">
+            <div className="text-sm font-extrabold text-black md:text-black">
               Нийт прогресс
             </div>
-            <div className="text-sm font-extrabold text-black md:text-white">
+            <div className="text-sm font-extrabold text-black md:text-black">
               {progressLoading ? "..." : `${overallPct}%`}
             </div>
           </div>
 
-          <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-black/10 md:bg-white/10">
+          {/* ✅ FIX: Desktop дээр ч саарал track + улбар шар fill (цагаан болохгүй) */}
+          <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-300 ring-1 ring-black/10 shadow-inner">
             <div
-              className="h-full rounded-full transition-all bg-[linear-gradient(90deg,rgba(255,138,0,1),rgba(255,184,92,1))]"
+              className="h-full rounded-full transition-all bg-orange-500"
               style={{ width: `${progressLoading ? 0 : overallPct}%` }}
             />
           </div>
 
-          <div className="mt-2 text-xs text-black/60 md:text-white/55">
+          <div className="mt-2 text-xs text-black md:text-black">
             {progressLoading
               ? "Тооцоолж байна..."
               : overallPct < 20
               ? "Эхлэл — өдөр бүр 10–15 минут үзээд хурдасгаарай."
               : overallPct < 70
-              ? "Сайн явж байна — тогтмол үргэлжлүүл."
+              ? "Сайн явж байна — ХИЧЭЭГЭЭРЭЙ."
               : overallPct < 100
               ? "Бараг дууслаа — сүүлийн хэсгээ үз!"
               : "Бүгдийг 100% үзсэн ✅"}
@@ -311,19 +319,19 @@ export default function MyContentPage() {
 
       <div className="mt-7">
         {fetching ? (
-          <div className="premium-card p-6 text-black/70 md:text-white/70">
+          <div className="premium-card p-6 text-black md:text-black">
             Уншиж байна...
           </div>
         ) : ids.length === 0 ? (
-          <div className="premium-card p-6 text-black/70 md:text-white/70">
+          <div className="premium-card p-6 text-black md:text-black">
             Та одоогоор худалдаж авсан сургалтгүй байна.
           </div>
         ) : (
           <>
             {missingIds.length > 0 ? (
-              <div className="mb-5 rounded-2xl border border-amber-300/20 bg-amber-500/5 p-4 text-sm text-amber-800 md:text-amber-100">
+              <div className="mb-5 rounded-2xl border border-amber-300/20 bg-amber-500/5 p-4 text-sm text-black md:text-black">
                 ⚠️ {missingIds.length} курс Firestore дээр олдсонгүй.
-                <div className="mt-2 text-xs break-all text-amber-700 md:text-amber-100/80">
+                <div className="mt-2 text-xs break-all text-black md:text-black">
                   {missingIds.join(", ")}
                 </div>
               </div>

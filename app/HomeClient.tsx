@@ -23,6 +23,7 @@ type Course = {
   accessMonths?: number;
   durationLabel?: string;
   shortDescription?: string;
+  isPublished?: boolean; // ✅ нэмсэн (legacy-д байхгүй байж болно)
 };
 
 type FreeLesson = {
@@ -35,11 +36,12 @@ type FreeLesson = {
 
 type SortKey = "new" | "old" | "az" | "za";
 
+// ✅ Labels updated to your requested wording
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
   { key: "new", label: "Шинэ нь эхэндээ" },
   { key: "old", label: "Хуучин нь эхэндээ" },
-  { key: "az", label: "A-Z" },
-  { key: "za", label: "Z-A" },
+  { key: "az", label: "Худалдаж аваагүй нь эхэндээ" },
+  { key: "za", label: "Худалдаж авсан нь эхэндээ" },
 ];
 
 export default function HomeClient() {
@@ -53,7 +55,7 @@ export default function HomeClient() {
   const [courseQuery, setCourseQuery] = useState("");
   const [courseSort, setCourseSort] = useState<SortKey>("new");
 
-  // ✅ Custom dropdown state (native select-ийг болиулсан)
+  // ✅ Custom dropdown state
   const [sortOpen, setSortOpen] = useState(false);
   const sortWrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -85,12 +87,17 @@ export default function HomeClient() {
         const qRef = query(collection(db, "courses"), orderBy("title", "asc"));
         const snap = await getDocs(qRef);
 
-        const list: Course[] = snap.docs.map((d) => ({
+        const listAll: Course[] = snap.docs.map((d) => ({
           id: d.id,
           ...(d.data() as any),
         }));
 
-        if (alive) setCourses(list);
+        // ✅ FIX: public дээр зөвхөн "hidden биш" course-ууд
+        // - isPublished === false => нуусан (гарахгүй)
+        // - isPublished === true/undefined => гарна (legacy-г эвдэхгүй)
+        const listPublic = listAll.filter((c: any) => c?.isPublished !== false);
+
+        if (alive) setCourses(listPublic);
       } catch (e) {
         console.error("courses fetch error:", e);
       } finally {
@@ -186,8 +193,18 @@ export default function HomeClient() {
       const at = (a.title ?? "").toLowerCase();
       const bt = (b.title ?? "").toLowerCase();
 
-      if (courseSort === "az") return at.localeCompare(bt);
-      if (courseSort === "za") return bt.localeCompare(at);
+      const ap = purchasedSet.has(a.id);
+      const bp = purchasedSet.has(b.id);
+
+      if (courseSort === "az") {
+        if (ap !== bp) return ap ? 1 : -1;
+        return at.localeCompare(bt);
+      }
+
+      if (courseSort === "za") {
+        if (ap !== bp) return ap ? -1 : 1;
+        return at.localeCompare(bt);
+      }
 
       const ay = getYearNum(a);
       const by = getYearNum(b);
@@ -202,14 +219,14 @@ export default function HomeClient() {
     });
 
     return out;
-  }, [courses, courseQuery, courseSort]);
+  }, [courses, courseQuery, courseSort, purchasedSet]);
 
   const sortLabel =
     SORT_OPTIONS.find((o) => o.key === courseSort)?.label ?? "Шинэ нь эхэндээ";
 
   return (
     <>
-      {/* HERO (NEW AI AGENT) */}
+      {/* HERO */}
       <HeroAgentSection
         isAuthed={!!user}
         loadingAuth={loadingAuth}
@@ -219,18 +236,16 @@ export default function HomeClient() {
       {/* CONTENTS */}
       <section id="contents" className="mx-auto max-w-6xl px-6 pt-14 pb-0">
         <div className="flex items-end justify-between">
-          <h2 className="text-2xl font-bold text-black md:text-white">
-            БАГЦ ХИЧЭЭЛҮҮД
-          </h2>
+          <h2 className="text-2xl font-bold text-black">БАГЦ ХИЧЭЭЛҮҮД</h2>
           <Link
             href="/contents"
-            className="text-sm text-black/60 hover:text-black md:text-white/60 md:hover:text-white"
+            className="text-sm text-black/60 hover:text-black"
           >
-            Бүгдийг үзэх →
+            Бүгдийг үзэх
           </Link>
         </div>
 
-        {/* ✅ Toolbar */}
+        {/* Toolbar */}
         <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
           <div className="flex w-full flex-col gap-4 sm:w-auto sm:flex-row sm:items-center">
             {/* Search */}
@@ -248,15 +263,9 @@ export default function HomeClient() {
                   placeholder:text-black/35
                   focus:border-black/20
                   focus:ring-2 focus:ring-black/10
-
-                  md:border-white/10 md:bg-white/5
-                  md:text-white/85
-                  md:placeholder:text-white/35
-                  md:focus:border-white/20
-                  md:focus:ring-white/10
                 "
               />
-              <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/45 md:text-white/45">
+              <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/45">
                 <svg
                   width="18"
                   height="18"
@@ -279,7 +288,7 @@ export default function HomeClient() {
               </div>
             </div>
 
-            {/* ✅ Custom Sort Dropdown */}
+            {/* Sort */}
             <div ref={sortWrapRef} className="relative w-full sm:w-[260px]">
               <button
                 type="button"
@@ -294,12 +303,6 @@ export default function HomeClient() {
                   hover:bg-black/5
                   focus:border-black/20
                   focus:ring-2 focus:ring-black/10
-
-                  md:border-white/10 md:bg-white/5
-                  md:text-white/85
-                  md:hover:bg-white/10
-                  md:focus:border-white/20
-                  md:focus:ring-white/10
                 "
                 aria-haspopup="listbox"
                 aria-expanded={sortOpen}
@@ -333,13 +336,9 @@ export default function HomeClient() {
                   className="
                     absolute right-0 z-50 mt-2 w-full overflow-hidden
                     rounded-2xl
-                    border border-black/10
+                    border border-black/15
                     bg-white
                     shadow-[0_16px_40px_rgba(0,0,0,0.12)]
-
-                    md:border-white/10
-                    md:bg-black/80 md:backdrop-blur-xl
-                    md:shadow-[0_16px_40px_rgba(0,0,0,0.55)]
                   "
                   role="listbox"
                 >
@@ -358,19 +357,15 @@ export default function HomeClient() {
                           px-4 py-3 text-sm
                           ${
                             active
-                              ? "bg-black/5 text-black md:bg-white/10 md:text-white"
-                              : "text-black/80 hover:bg-black/5 hover:text-black md:text-white/80 md:hover:bg-white/5 md:hover:text-white"
+                              ? "bg-black/5 text-black"
+                              : "text-black/80 hover:bg-black/5 hover:text-black"
                           }
                         `}
                         role="option"
                         aria-selected={active}
                       >
                         <span className="truncate">{opt.label}</span>
-                        {active ? (
-                          <span className="text-black/70 md:text-white/90">
-                            ✓
-                          </span>
-                        ) : null}
+                        {active ? <span className="text-black/70">✓</span> : null}
                       </button>
                     );
                   })}
@@ -385,9 +380,9 @@ export default function HomeClient() {
             {Array.from({ length: 3 }).map((_, i) => (
               <div
                 key={i}
-                className="rounded-2xl border border-black/10 bg-white p-3 md:border-white/10 md:bg-white/5"
+                className="rounded-2xl border border-black/10 bg-white p-3"
               >
-                <div className="aspect-[16/10] w-full animate-pulse rounded-xl bg-black/5 md:bg-white/5" />
+                <div className="aspect-[16/10] w-full animate-pulse rounded-xl bg-black/5" />
               </div>
             ))}
           </div>
@@ -410,15 +405,9 @@ export default function HomeClient() {
       {/* FREE LESSONS */}
       <section className="mx-auto max-w-6xl px-6 pt-14 pb-0">
         <div className="mt-6 flex items-end justify-between">
-          <h2 className="text-2xl font-bold text-black md:text-white">
-            ҮНЭГҮЙ ХИЧЭЭЛҮҮД
-          </h2>
-
-          <Link
-            href="/free"
-            className="text-sm text-black/60 hover:text-black md:text-white/60 md:hover:text-white"
-          >
-            Бүгдийг үзэх →
+          <h2 className="text-2xl font-bold text-black">ҮНЭГҮЙ ХИЧЭЭЛҮҮД</h2>
+          <Link href="/free" className="text-sm text-black/60 hover:text-black">
+            Бүгдийг үзэх
           </Link>
         </div>
 
@@ -427,20 +416,20 @@ export default function HomeClient() {
             {Array.from({ length: 3 }).map((_, i) => (
               <div
                 key={i}
-                className="rounded-2xl border border-black/10 bg-white p-3 md:border-white/10 md:bg-white/5"
+                className="rounded-2xl border border-black/10 bg-white p-3"
               >
-                <div className="aspect-[16/10] w-full animate-pulse rounded-xl bg-black/5 md:bg-white/5" />
+                <div className="aspect-[16/10] w-full animate-pulse rounded-xl bg-black/5" />
               </div>
             ))}
           </div>
         ) : !user ? (
-          <div className="mt-6 rounded-2xl border border-black/10 bg-white p-4 text-sm md:border-white/10 md:bg-white/5">
-            <span className="font-extrabold text-black md:text-white">
+          <div className="mt-6 rounded-2xl border border-black/10 bg-white p-4 text-sm">
+            <span className="font-extrabold text-black">
               Зөвхөн нэвтэрч орсон хүмүүст ҮНЭГҮЙ ХИЧЭЭЛ харагдана.
             </span>
           </div>
         ) : freeLessons.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-black/10 bg-white p-4 text-sm text-black/70 md:border-white/10 md:bg-white/5 md:text-white/70">
+          <div className="mt-6 rounded-2xl border border-black/10 bg-white p-4 text-sm text-black/70">
             Одоогоор үнэгүй хичээл алга байна.
           </div>
         ) : (
@@ -454,10 +443,7 @@ export default function HomeClient() {
         <div className="mt-10 flex justify-center">
           <Link
             href="/contents"
-            className="
-              rounded-full bg-black px-6 py-3 text-sm font-semibold text-white hover:opacity-90
-              md:bg-white/10 md:text-white/80 md:hover:bg-white/15
-            "
+            className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
           >
             Бүх хичээлүүдийг үзэх →
           </Link>

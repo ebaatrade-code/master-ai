@@ -76,7 +76,7 @@ export default function ResetPasswordPage() {
             M
           </div>
           <h1 className="text-center text-lg font-semibold">Нууц үг сэргээх</h1>
-          <p className="mt-1 text-center text-xs text-white/50">
+          <p className="mt-1 text-center text-xs text-black/50">
             Бүртгэлтэй имэйлээ оруулаарай. Сэргээх холбоос очно.
           </p>
         </div>
@@ -84,7 +84,7 @@ export default function ResetPasswordPage() {
         <div className="px-8 py-6">
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label className="mb-2 block text-xs text-white/60">Имэйл хаяг</label>
+              <label className="mb-2 block text-xs text-black/60">Имэйл хаяг</label>
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -93,7 +93,7 @@ export default function ResetPasswordPage() {
                 placeholder="name@gmail.com"
                 className="
                   w-full rounded-xl border border-white/10
-                  bg-white/5 px-4 py-3 text-sm text-white
+                  bg-white/5 px-4 py-3 text-sm text-black
                   outline-none
                   focus:border-white/20 focus:bg-white/10
                 "
@@ -125,12 +125,12 @@ export default function ResetPasswordPage() {
               {loading ? "Түр хүлээнэ үү..." : "Сэргээх холбоос явуулах →"}
             </button>
 
-            <div className="flex items-center justify-between pt-1 text-xs text-white/50">
-              <Link href={`/login${callbackQS}`} className="hover:text-white">
+            <div className="flex items-center justify-between pt-1 text-xs text-black/50">
+              <Link href={`/login${callbackQS}`} className="hover:text-black">
                 ← Нэвтрэх рүү
               </Link>
 
-              <Link href={callbackUrl || "/"} className="hover:text-white">
+              <Link href={callbackUrl || "/"} className="hover:text-black">
                 Буцах →
               </Link>
             </div>
@@ -139,7 +139,7 @@ export default function ResetPasswordPage() {
 
         <div className="mt-auto px-8 pb-7">
           <div className="h-px w-full bg-white/10 mb-4" />
-          <p className="text-center text-[11px] text-white/40">
+          <p className="text-center text-[11px] text-black/40">
             Онлайн хичээлд хөрвүүлэгч • ebacreator платформ
           </p>
         </div>

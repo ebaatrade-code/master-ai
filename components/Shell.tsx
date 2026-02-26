@@ -12,7 +12,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // ✅ IMPORTANT: Hook-оо үргэлж дээр нь дуудна (conditional return-оос өмнө)
   const { user, loading, logout } = useAuth();
 
   const isAuthPage =
@@ -21,23 +20,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     pathname === "/reset-password" ||
     pathname.startsWith("/reset-password/");
 
-  // ✅ Auth page дээр UI нь зөвхөн өөр өнгөтэй (desktop-ийг огт эвдэхгүй)
+  // ✅ AUTH pages: ямар ч frame/panel байхгүй — 100% full white
   if (isAuthPage) {
-    return (
-      <div className="min-h-screen bg-white text-black md:bg-[#0b0b0f] md:text-white">
-        {children}
-      </div>
-    );
+    return <div className="min-h-screen w-full bg-white text-black">{children}</div>;
   }
 
-  // ✅ REAL AUTH state
   const isAuthed = !!user;
   const loadingAuth = !!loading;
 
-  // ✅ Mobile дээр "Нэвтрэх" рүү явуулах
   const onLogin = () => router.push("/login");
 
-  // ✅ Logout үнэхээр Firebase signOut хийх
   const onLogout = async () => {
     try {
       await logout();
@@ -48,43 +40,47 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden flex flex-col bg-white text-black md:bg-transparent md:text-white">
-      {/* ✅ HERO BG — DESKTOP ONLY */}
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden hidden md:block">
+    // ✅ FRAME-ийг зөвхөн auth биш хуудсууд дээр л хадгална (хуучин дизайн 1:1)
+    <div className="relative min-h-screen bg-white text-black">
+      <div className="relative mx-auto w-full max-w-[1400px] px-0 py-0 md:px-6 md:py-10 z-10">
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.55]"
-          style={{ backgroundImage: "url(/hero/hero-bg.png)" }}
-        />
-        <div className="absolute inset-0 bg-black/25" />
+          className="
+            relative overflow-hidden
+            bg-white
+            ring-1 ring-black/10
+            shadow-[0_30px_120px_rgba(0,0,0,0.10)]
+            rounded-none
+            md:rounded-[28px]
+          "
+        >
+          {/* ✅ subtle top highlight (light) */}
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.04),transparent_38%)]" />
 
-        <div className="absolute -top-48 right-[-240px] h-[560px] w-[560px] rounded-full bg-orange-500/25 blur-[140px]" />
-        <div className="absolute -bottom-56 left-1/2 h-[700px] w-[980px] -translate-x-1/2 rounded-full bg-orange-500/25 blur-[170px]" />
-      </div>
+          {/* ✅ MAIN CONTENT */}
+          <div className="relative z-10 min-h-screen flex flex-col bg-white text-black">
+            <TopBanner />
 
-      {/* ✅ CONTENT */}
-      <div className="relative z-10 min-h-screen flex flex-col bg-white text-black md:bg-transparent md:text-white">
-        <TopBanner />
+            <Suspense fallback={<div className="h-[56px]" />}>
+              <MobileHeader
+                isAuthed={isAuthed}
+                loadingAuth={loadingAuth}
+                onLogin={onLogin}
+                onLogout={onLogout}
+              />
 
-        <Suspense fallback={<div className="h-[56px]" />}>
-          {/* 📱 Mobile header */}
-          <MobileHeader
-            isAuthed={isAuthed}
-            loadingAuth={loadingAuth}
-            onLogin={onLogin}
-            onLogout={onLogout}
-          />
+              <div className="hidden md:block">
+                <Header />
+              </div>
+            </Suspense>
 
-          {/* 💻 Desktop header */}
-          <div className="hidden md:block">
-            <Header />
+            <main className="flex-1 bg-white text-black">{children}</main>
+
+            {/* ✅ FOOTER — Саарал хэвээр */}
+            <div className="bg-gray-200 border-t border-gray-200">
+              <Footer />
+            </div>
           </div>
-        </Suspense>
-
-        <main className="flex-1 bg-white text-black md:bg-transparent md:text-white">
-          {children}
-        </main>
-
-        <Footer />
+        </div>
       </div>
     </div>
   );

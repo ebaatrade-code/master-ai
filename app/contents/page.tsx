@@ -63,18 +63,18 @@ export default function ContentsPage() {
 
   if (fetching) {
     return (
-      <main className="mx-auto max-w-6xl px-4 py-10 text-white">
+      <main className="mx-auto max-w-6xl px-4 py-10 text-black">
         <h2 className="text-3xl font-extrabold">Контентууд</h2>
-        <div className="mt-6 text-white/60">Уншиж байна...</div>
+        <div className="mt-6 text-black/60">Уншиж байна...</div>
       </main>
     );
   }
 
   if (err) {
     return (
-      <main className="mx-auto max-w-6xl px-4 py-10 text-white">
+      <main className="mx-auto max-w-6xl px-4 py-10 text-black">
         <h2 className="text-3xl font-extrabold">Контентууд</h2>
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-white/70">
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-black/70">
           {err}
         </div>
       </main>
@@ -82,21 +82,19 @@ export default function ContentsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10 text-white">
+    <main className="mx-auto max-w-6xl px-4 py-10 text-black">
       <h2 className="text-3xl font-extrabold">Контентууд</h2>
-      <p className="mt-2 text-sm text-white/60">
-        Багц дээр дарж дэлгэрэнгүйг харж болно. Видео нь зөвхөн нэвтэрч + худалдаж
-        авсан үед нээгдэнэ.
-      </p>
+      <p className="mt-2 text-sm text-black/60">
+ </p>
 
       {!loading && !user ? (
-        <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-white/70">
+        <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-black/70">
           🔒 Нэвтрээгүй байна. Видео үзэхийн тулд нэвтэрнэ үү.
         </div>
       ) : null}
 
       {courses.length === 0 ? (
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-white/70">
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-black/70">
           Одоогоор контент алга байна.
         </div>
       ) : (

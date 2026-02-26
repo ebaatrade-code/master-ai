@@ -106,12 +106,7 @@ function IconMail({ className = "" }: { className?: string }) {
 function IconSpark({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path
-        d="M13 2 3 14h8l-1 8 11-14h-8l0-6Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
+      <path d="M13 2 3 14h8l-1 8 11-14h-8l0-6Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -134,10 +129,11 @@ function IconPencil({ className = "" }: { className?: string }) {
    UI helpers
 ========================= */
 function glowRing(level: number) {
-  if (level >= 4) return "ring-2 ring-white/35";
-  if (level >= 3) return "ring-2 ring-white/25";
-  if (level >= 2) return "ring-2 ring-white/18";
-  return "ring-1 ring-white/12";
+  // ✅ Light theme ring
+  if (level >= 4) return "ring-2 ring-black/25";
+  if (level >= 3) return "ring-2 ring-black/18";
+  if (level >= 2) return "ring-2 ring-black/14";
+  return "ring-1 ring-black/12";
 }
 
 function levelBadgeText(rankName: string, level: number, roleLabel: string) {
@@ -169,7 +165,6 @@ export default function ProfilePage() {
   const email = useMemo(() => user?.email || userDoc?.email || "", [user?.email, userDoc?.email]);
   const createdAtText = useMemo(() => formatISO(userDoc?.createdAt), [userDoc?.createdAt]);
 
-  // NOTE: still computed but we won't show it anymore (per request)
   const lastLoginText = useMemo(() => {
     const t = user?.metadata?.lastSignInTime || "";
     return formatDateTime(t);
@@ -269,30 +264,36 @@ export default function ProfilePage() {
   };
 
   /* =========================
-     Clean UI classes (DESKTOP - unchanged below)
+     ✅ DESKTOP (LIGHT UI) — Profile only
+     - Stroke weight visible
+     - Inside background pure white
+     - Important text bold
   ========================= */
-  const sectionCls = "pt-10 mt-10 border-t border-white/10";
+  const sectionCls = "pt-10 mt-10 border-t border-black/10";
 
-  const h2 = "mt-1 text-xl font-semibold text-white";
+  const h2 = "mt-1 text-xl font-extrabold tracking-tight text-black";
+
   const card =
-    "rounded-3xl border border-white/10 bg-black/45 backdrop-blur-xl shadow-[0_18px_60px_rgba(0,0,0,0.55)]";
-  const inner = "rounded-2xl border border-white/10 bg-black/35";
+    "rounded-3xl border-2 border-black/15 bg-white shadow-[0_22px_70px_rgba(0,0,0,0.12)]";
+  const inner =
+    "rounded-2xl border-2 border-black/10 bg-white shadow-[0_10px_26px_rgba(0,0,0,0.06)]";
 
-  const labelRow = "mb-2 flex items-center gap-2 text-sm font-semibold text-white/80";
-  const iconDot = "inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/15";
-  const iconCls = "h-4 w-4 text-white/85";
+  const labelRow = "mb-2 flex items-center gap-2 text-sm font-bold text-black/75";
+  const iconDot =
+    "inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-black/[0.03] ring-1 ring-black/12";
+  const iconCls = "h-4 w-4 text-black/80";
 
   const inputWrap =
-    "relative rounded-2xl border border-white/14 bg-black/40 ring-1 ring-white/5 focus-within:border-[rgba(244,210,122,0.35)] focus-within:ring-[rgba(244,210,122,0.12)]";
+    "relative rounded-2xl border-2 border-black/12 bg-white ring-1 ring-black/5 focus-within:border-black/30 focus-within:ring-black/10";
   const inputBase =
-    "w-full rounded-2xl bg-transparent pl-11 pr-4 py-3.5 text-sm text-white placeholder:text-white/45 outline-none";
-  const inputIcon = "absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/70";
-  const inputDisabled = "cursor-not-allowed opacity-95";
+    "w-full rounded-2xl bg-transparent pl-11 pr-4 py-3.5 text-sm text-black placeholder:text-black/40 outline-none";
+  const inputIcon = "absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-black/55";
+  const inputDisabled = "cursor-not-allowed opacity-80";
 
   const goldBtn =
-    "rounded-full px-5 py-2 text-sm font-semibold text-black bg-[linear-gradient(135deg,#F4D27A,#F1C45B)] shadow-[0_16px_40px_rgba(244,210,122,0.16)] hover:brightness-[1.03] active:translate-y-[1px]";
+    "rounded-full px-5 py-2 text-sm font-extrabold text-black bg-[linear-gradient(135deg,#F4D27A,#F1C45B)] border border-black/10 shadow-[0_16px_40px_rgba(244,210,122,0.22)] hover:brightness-[1.03] active:translate-y-[1px]";
   const ghostBtn =
-    "rounded-full px-5 py-2 text-sm font-semibold border border-white/14 bg-white/5 text-white/90 hover:bg-white/10";
+    "rounded-full px-5 py-2 text-sm font-extrabold border-2 border-black/12 bg-white text-black hover:bg-black/[0.03]";
 
   // ======== MOBILE helpers (Skool-like) ========
   const mobileHandle = useMemo(() => {
@@ -303,10 +304,9 @@ export default function ProfilePage() {
   return (
     <>
       {/* =========================================================
-          ✅ MOBILE (Skool-like) — ONLY phone view
+          ✅ MOBILE (unchanged)
           ========================================================= */}
       <div className="md:hidden min-h-[calc(100vh-80px)] bg-white text-black">
-        {/* Sticky header: Skool style (No "Засах" here) */}
         <div className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-black/10">
           <div className="mx-auto max-w-md px-4 h-12 flex items-center justify-between">
             <button
@@ -319,13 +319,10 @@ export default function ProfilePage() {
             </button>
 
             <div className="text-[15px] font-semibold tracking-tight">Profile</div>
-
-            {/* ✅ removed "Засах" from header */}
             <div className="h-9 w-9" aria-hidden="true" />
           </div>
         </div>
 
-        {/* Toast (mobile) */}
         {toast && (
           <div className="mx-auto max-w-md px-4 pt-4">
             <div
@@ -342,10 +339,8 @@ export default function ProfilePage() {
         )}
 
         <div className="mx-auto max-w-md px-4 pb-10">
-          {/* Top card */}
           <div className="pt-6">
             <div className="flex flex-col items-center text-center">
-              {/* Avatar (circle like Skool) */}
               <div className="relative">
                 <div className="h-24 w-24 rounded-full overflow-hidden border border-black/10 bg-black/5">
                   {avatarPreview ? (
@@ -358,12 +353,10 @@ export default function ProfilePage() {
                   )}
                 </div>
 
-                {/* Small badge (rank) */}
                 <div className="absolute -right-1 -bottom-1 h-7 min-w-7 px-2 rounded-full bg-black text-white text-[12px] font-semibold flex items-center justify-center border border-black/10">
                   L{rank.level}
                 </div>
 
-                {/* Avatar edit (only when editing) */}
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
@@ -393,10 +386,8 @@ export default function ProfilePage() {
 
               <div className="mt-3 text-[22px] font-extrabold tracking-tight">{name?.trim() ? name : "PROFILE"}</div>
               <div className="mt-0.5 text-[13px] text-black/55">{mobileHandle}</div>
-
               <div className="mt-2 text-[14px] text-black/70">{email || "—"}</div>
 
-              {/* Skool style info rows */}
               <div className="mt-4 w-full space-y-3 text-left">
                 <div className="flex items-center gap-3 text-[14px]">
                   <span className="h-3 w-3 rounded-full bg-green-500" />
@@ -408,7 +399,6 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* CTA buttons (Skool vibe) */}
               <div className="mt-5 w-full grid grid-cols-1 gap-3">
                 <Link
                   href="/my-content"
@@ -421,13 +411,7 @@ export default function ProfilePage() {
                     href="/my-content"
                     className="h-11 rounded-xl border border-black/10 bg-white font-semibold text-[14px] flex items-center justify-center active:scale-[0.99]"
                   >
-                    Ахиц харах
-                  </Link>
-                  <Link
-                    href="/my-courses"
-                    className="h-11 rounded-xl border border-black/10 bg-white font-semibold text-[14px] flex items-center justify-center active:scale-[0.99]"
-                  >
-                    Миний курсууд
+                    Авсан сургалтын ахиц харах
                   </Link>
                 </div>
               </div>
@@ -436,7 +420,6 @@ export default function ProfilePage() {
 
           <div className="my-5 border-t border-black/10" />
 
-          {/* Stats row (Skool-ish 3 columns) */}
           <div className="grid grid-cols-3 rounded-2xl border border-black/10 overflow-hidden bg-white">
             <div className="py-4 text-center">
               <div className="text-[20px] font-extrabold">{purchasedCount}</div>
@@ -454,7 +437,6 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Progress bar (clean) */}
           <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
             <div className="flex items-center justify-between text-[12px] text-black/60">
               <span className="font-semibold">Нийт ахиц</span>
@@ -480,14 +462,10 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* =========================
-              ✅ "Хувийн мэдээлэл" card + EDIT BUTTON in top-right (stroke дотор)
-             ========================= */}
           <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4 relative">
             <div className="flex items-center justify-between">
               <div className="text-[14px] font-semibold text-black">Хувийн мэдээлэл</div>
 
-              {/* ✅ энд "Засах" байрлана (header дээр байхгүй) */}
               {!editing ? (
                 <button
                   onClick={() => setEditing(true)}
@@ -569,41 +547,32 @@ export default function ProfilePage() {
       </div>
 
       {/* =========================================================
-          ✅ DESKTOP (UNCHANGED) — DO NOT TOUCH
+          ✅ DESKTOP (UPDATED to White stroke UI)
           ========================================================= */}
-      <div className="hidden md:block">
-        <div className="min-h-screen">
+      <div className="hidden md:block bg-white text-black">
+        <div className="min-h-screen bg-white text-black">
           <div className="mx-auto max-w-5xl px-5 py-10">
-            {/* Title */}
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-white">Профайл</h1>
-
-                {/* ✅ REMOVED: subtitle line (circled) */}
-                {/* <p className="mt-2 text-sm text-white/60">Хэрэглэгчийн мэдээлэл • эрх/түвшин • account статус</p> */}
+                <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-black">Профайл</h1>
               </div>
             </div>
 
-            {/* Toast */}
             {toast && (
               <div
                 className={cn(
-                  "mt-6 rounded-2xl border px-4 py-3 text-sm",
-                  toast.type === "ok" && "border-emerald-400/30 bg-emerald-400/10 text-emerald-50",
-                  toast.type === "err" && "border-red-400/30 bg-red-400/10 text-red-50",
-                  toast.type === "info" && "border-white/15 bg-white/5 text-white/80"
+                  "mt-6 rounded-2xl border-2 px-4 py-3 text-sm",
+                  toast.type === "ok" && "border-emerald-600/20 bg-emerald-500/10 text-emerald-900",
+                  toast.type === "err" && "border-red-600/20 bg-red-500/10 text-red-900",
+                  toast.type === "info" && "border-black/10 bg-black/5 text-black/70"
                 )}
               >
-                <span className="font-semibold">{toast.text}</span>
+                <span className="font-bold">{toast.text}</span>
               </div>
             )}
 
-            {/* Profile */}
             <section className={sectionCls}>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className={h2}>Profile</div>
-                </div>
 
                 {!editing ? (
                   <button onClick={() => setEditing(true)} className={cn(goldBtn, "inline-flex items-center gap-2")}>
@@ -622,15 +591,13 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* Main card */}
               <div className={cn("mt-6 p-5 md:p-6", card)}>
                 <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-5">
-                    {/* Avatar */}
                     <div className="relative">
                       <div
                         className={cn(
-                          "h-24 w-24 md:h-28 md:w-28 overflow-hidden rounded-3xl border border-white/15 bg-white/5",
+                          "h-24 w-24 md:h-28 md:w-28 overflow-hidden rounded-3xl border-2 border-black/15 bg-white",
                           glowRing(rank.level)
                         )}
                       >
@@ -638,32 +605,30 @@ export default function ProfilePage() {
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={avatarPreview} alt="avatar" className="h-full w-full object-cover" />
                         ) : (
-                          <div className="grid h-full w-full place-items-center text-3xl font-semibold">
+                          <div className="grid h-full w-full place-items-center text-3xl font-extrabold text-black/70">
                             {((name || email || "U").trim()[0] || "U").toUpperCase()}
                           </div>
                         )}
                       </div>
 
                       <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
-                        <div className="rounded-full border border-white/12 bg-black/55 px-3 py-1 text-[11px] font-semibold text-white/90 backdrop-blur">
+                        <div className="rounded-full border border-black/15 bg-white px-3 py-1 text-[11px] font-extrabold text-black shadow-[0_12px_30px_rgba(0,0,0,0.10)]">
                           {levelBadgeText(rank.name, rank.level, roleLabel)}
                         </div>
                       </div>
 
-                      {/* ✅ REMOVED TEXT "Зураг" => icon-only edit */}
                       <button
                         type="button"
                         onClick={() => fileRef.current?.click()}
                         disabled={!editing || avatarUploading}
                         className={cn(
-                          "absolute -top-2 -right-2 inline-flex items-center justify-center rounded-full border border-white/15 bg-black/60 p-2 backdrop-blur",
-                          editing ? "hover:bg-white/10" : "opacity-50 cursor-not-allowed"
+                          "absolute -top-2 -right-2 inline-flex items-center justify-center rounded-full border-2 border-black/15 bg-white p-2",
+                          editing ? "hover:bg-black/[0.03]" : "opacity-50 cursor-not-allowed"
                         )}
                         title="Зураг солих"
                         aria-label="Зураг солих"
                       >
-                        {/* use pencil icon (new) */}
-                        <IconPencil className="h-4 w-4 text-white/90" />
+                        <IconPencil className="h-4 w-4 text-black/85" />
                       </button>
 
                       <input
@@ -679,87 +644,76 @@ export default function ProfilePage() {
                       />
                     </div>
 
-                    {/* Meta */}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="truncate text-2xl font-semibold">{name?.trim() ? name : "PROFILE"}</div>
+                        <div className="truncate text-2xl font-extrabold text-black">
+                          {name?.trim() ? name : "PROFILE"}
+                        </div>
 
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white/75">
+                        <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-xs font-extrabold text-black/80">
                           {roleLabel}
                         </span>
 
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white/75">
+                        <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-xs font-extrabold text-black/80">
                           {accessStatus}
                         </span>
                       </div>
 
-                      <div className="mt-1 truncate text-sm text-white/75">{email || "—"}</div>
+                      <div className="mt-1 truncate text-sm font-semibold text-black/65">{email || "—"}</div>
 
-                      {/* ✅ REMOVED: "Бүртгүүлсэн / Сүүлд нэвтэрсэн" row (circled last login) */}
-                      {/* <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/60">
-                        <div>
-                          <span className="font-semibold text-white/75">Бүртгүүлсэн:</span> {createdAtText}
-                        </div>
-                        <div>
-                          <span className="font-semibold text-white/75">Сүүлд нэвтэрсэн:</span> {lastLoginText}
-                        </div>
-                      </div> */}
-
-                      <div className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-black/35 px-3 py-2 text-xs text-white/80">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/15">
-                          <IconSpark className="h-4 w-4 text-white/90" />
+                      <div className="mt-3 inline-flex items-center gap-2 rounded-2xl border-2 border-black/10 bg-white px-3 py-2 text-xs text-black/75 shadow-[0_10px_26px_rgba(0,0,0,0.06)]">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-black/[0.03] ring-1 ring-black/10">
+                          <IconSpark className="h-4 w-4 text-black/85" />
                         </span>
-                        Өнөөдөр 10 минут үзвэл ахиц хамгийн хурдан нэмэгдэнэ.
+                        <span className="font-semibold">Өнөөдөр 10 минут үзвэл</span> ахиц хамгийн хурдан нэмэгдэнэ.
                       </div>
                     </div>
                   </div>
 
-                  {/* CTA */}
                   <div className="flex flex-col gap-2 sm:flex-row md:flex-col md:items-end">
                     <Link href="/my-content" className={cn(goldBtn, "text-center")}>
                       Үргэлжлүүлэх →
                     </Link>
 
-                    {/* ✅ ONLY CHANGE: /progress -> /my-content */}
                     <Link href="/my-content" className={cn(ghostBtn, "text-center")}>
-                      Ахиц харах
+                      Авсан сургалтын ахиц харах
                     </Link>
                   </div>
                 </div>
 
-                {/* Stats */}
                 <div className="mt-6 grid gap-3 sm:grid-cols-3">
                   <div className={cn("p-4", inner)}>
-                    <div className="text-xs font-semibold text-white/60">Авсан курс</div>
-                    <div className="mt-1 text-2xl font-semibold">{purchasedCount}</div>
+                    <div className="text-xs font-bold text-black/55">Авсан курс</div>
+                    <div className="mt-1 text-2xl font-extrabold text-black">{purchasedCount}</div>
                   </div>
 
                   <div className={cn("p-4", inner)}>
-                    <div className="text-xs font-semibold text-white/60">Нийт ахиц</div>
-                    <div className="mt-1 text-2xl font-semibold">{fetchingStats ? "…" : `${progressPercent}%`}</div>
+                    <div className="text-xs font-bold text-black/55">Өөрийгөө хөгжүүлж байгаа ахиц</div>
+                    <div className="mt-1 text-2xl font-extrabold text-black">
+                      {fetchingStats ? "…" : `${progressPercent}%`}
+                    </div>
 
-                    <div className="mt-3 h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                    <div className="mt-3 h-2 w-full rounded-full bg-black/10 overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-[linear-gradient(90deg,#F4D27A,rgba(255,255,255,0.95))] shadow-[0_0_26px_rgba(244,210,122,0.18)]"
+                        className="h-full rounded-full bg-[linear-gradient(90deg,#F4D27A,rgba(0,0,0,0.85))] shadow-[0_0_22px_rgba(244,210,122,0.22)]"
                         style={{ width: `${progressPercent}%` }}
                       />
                     </div>
 
-                    <div className="mt-2 text-xs text-white/55">
-                      Нийт курс: <span className="font-semibold text-white/85">{totalCourses ?? "…"}</span>
+                    <div className="mt-2 text-xs text-black/55">
+                      Нийт курс: <span className="font-extrabold text-black">{totalCourses ?? "…"}</span>
                     </div>
                   </div>
 
                   <div className={cn("p-4", inner)}>
-                    <div className="text-xs font-semibold text-white/60">Таны түвшин</div>
-                    <div className="mt-1 text-2xl font-semibold">
-                      L{rank.level} <span className="text-sm font-semibold text-white/60">· {rank.name}</span>
+                    <div className="text-xs font-bold text-black/55">Таны түвшин</div>
+                    <div className="mt-1 text-2xl font-extrabold text-black">
+                      L{rank.level} <span className="text-sm font-bold text-black/55">· {rank.name}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Inputs */}
               <div className="mt-7 grid gap-5 md:grid-cols-2">
                 <div>
                   <div className={labelRow}>
@@ -804,9 +758,9 @@ export default function ProfilePage() {
                     <span className={iconDot}>
                       <IconMail className={iconCls} />
                     </span>
-                    Email (read-only)
+                    Майл хаяг
                   </div>
-                  <div className={cn(inputWrap, "cursor-not-allowed")}>
+                  <div className={cn(inputWrap, "cursor-not-allowed bg-black/[0.02]")}>
                     <IconMail className={inputIcon} />
                     <input className={cn(inputBase, "opacity-95")} readOnly value={email} />
                   </div>
@@ -814,50 +768,46 @@ export default function ProfilePage() {
               </div>
             </section>
 
-            {/* Status */}
             <section className={sectionCls}>
-              {/* ✅ REMOVED: "ЭРХ / ТҮВШИН (READ-ONLY)" */}
               <div className={h2}>Таны статус</div>
 
               <div className="mt-5 grid gap-3 md:grid-cols-3">
                 <div className={cn("px-4 py-4", inner)}>
-                  <div className="text-xs text-white/60 font-semibold">Role</div>
-                  <div className="mt-2 text-lg font-semibold">{roleLabel}</div>
+                  <div className="text-xs text-black/55 font-bold">Role</div>
+                  <div className="mt-2 text-lg font-extrabold text-black">{roleLabel}</div>
                 </div>
 
                 <div className={cn("px-4 py-4", inner)}>
-                  <div className="text-xs text-white/60 font-semibold">Rank / Level</div>
-                  <div className="mt-2 text-lg font-semibold">
-                    {rank.name} <span className="text-white/50 text-sm font-semibold">· L{rank.level}</span>
+                  <div className="text-xs text-black/55 font-bold">Rank / Level</div>
+                  <div className="mt-2 text-lg font-extrabold text-black">
+                    {rank.name} <span className="text-black/50 text-sm font-bold">· L{rank.level}</span>
                   </div>
                 </div>
 
                 <div className={cn("px-4 py-4", inner)}>
-                  <div className="text-xs text-white/60 font-semibold">Access</div>
-                  <div className="mt-2 text-lg font-semibold">{accessStatus}</div>
+                  <div className="text-xs text-black/55 font-bold">Access</div>
+                  <div className="mt-2 text-lg font-extrabold text-black">{accessStatus}</div>
                 </div>
               </div>
             </section>
 
-            {/* Account */}
             <section className={sectionCls}>
-              {/* ✅ REMOVED: "ACCOUNT STATUS (READ-ONLY)" */}
               <div className={h2}>Account мэдээлэл</div>
 
               <div className="mt-5 grid gap-3 md:grid-cols-3">
                 <div className={cn("px-4 py-4", inner)}>
-                  <div className="text-xs text-white/60 font-semibold">Status</div>
-                  <div className="mt-2 text-lg font-semibold">{accountStatusLabel(userDoc?.accountStatus)}</div>
+                  <div className="text-xs text-black/55 font-bold">Status</div>
+                  <div className="mt-2 text-lg font-extrabold text-black">{accountStatusLabel(userDoc?.accountStatus)}</div>
                 </div>
 
                 <div className={cn("px-4 py-4", inner)}>
-                  <div className="text-xs text-white/60 font-semibold">Auth method</div>
-                  <div className="mt-2 text-lg font-semibold">{authMethodLabel(userDoc?.authMethod)}</div>
+                  <div className="text-xs text-black/55 font-bold">Auth method</div>
+                  <div className="mt-2 text-lg font-extrabold text-black">{authMethodLabel(userDoc?.authMethod)}</div>
                 </div>
 
                 <div className={cn("px-4 py-4", inner)}>
-                  <div className="text-xs text-white/60 font-semibold">Сүүлд нэвтэрсэн</div>
-                  <div className="mt-2 text-base font-semibold">{lastLoginText}</div>
+                  <div className="text-xs text-black/55 font-bold">Сүүлд нэвтэрсэн</div>
+                  <div className="mt-2 text-base font-extrabold text-black">{lastLoginText}</div>
                 </div>
               </div>
             </section>

@@ -73,7 +73,7 @@ export default function FreeLessonPage() {
   // auth redirect хийгдэх үед flash гаргахгүй
   if (loadingAuth) {
     return (
-      <main className="mx-auto max-w-6xl px-6 py-10 text-white">
+      <main className="mx-auto max-w-6xl px-6 py-10 text-black">
         <div className="h-10 w-40 rounded-full bg-white/10 animate-pulse" />
         <div className="mt-6 h-72 rounded-3xl bg-white/10 animate-pulse" />
       </main>
@@ -83,7 +83,7 @@ export default function FreeLessonPage() {
   if (!user) return null;
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10 text-white">
+    <main className="mx-auto max-w-6xl px-6 py-10 text-black">
       {/* TOP BAR */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button
@@ -91,7 +91,7 @@ export default function FreeLessonPage() {
           className="
             group inline-flex items-center gap-2 rounded-full
             border border-white/10 bg-white/5 px-4 py-2 text-sm
-            text-white/85 backdrop-blur
+            text-black/85 backdrop-blur
             hover:bg-white/10 hover:border-white/20
             transition
           "
@@ -100,17 +100,17 @@ export default function FreeLessonPage() {
           Буцах
         </button>
 
-        <div className="text-xs text-white/45">
+        <div className="text-xs text-black/45">
           Free lesson • {id ? `ID: ${id}` : ""}
         </div>
       </div>
 
       {loading ? (
-        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/60">
+        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-black/60">
           Ачаалж байна...
         </div>
       ) : !data ? (
-        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/60">
+        <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-black/60">
           Контент олдсонгүй.
         </div>
       ) : (
@@ -124,21 +124,19 @@ export default function FreeLessonPage() {
               p-6
             "
           >
-            <div className="text-[11px] text-white/55">Үнэгүй хичээл</div>
+            <div className="text-[11px] text-black/55">Үнэгүй хичээл</div>
             <h1 className="mt-2 text-2xl font-extrabold tracking-tight md:text-3xl">
               {data.title}
             </h1>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/55">
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-black/55">
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
                 ✅ Нэвтэрсэн хэрэглэгч
               </span>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
                 ▶️ Видео
               </span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                🧊 Neon UI
-              </span>
+
             </div>
           </div>
 
@@ -172,24 +170,19 @@ export default function FreeLessonPage() {
 />
           </div>
 
-          {/* FOOT NOTE */}
-          <div className="mt-3 text-xs text-white/45">
-            ✅ Free view log бичигдэж байна (freeLessonViews)
-          </div>
-
           {/* CTA STRIP */}
           <div
             className="
               mt-8 rounded-3xl border border-white/10
-              bg-white/5 p-5 text-sm text-white/70
+              bg-white/5 p-5 text-sm text-black/70
               flex flex-col gap-3 md:flex-row md:items-center md:justify-between
             "
           >
             <div>
-              <div className="font-semibold text-white/85">
+              <div className="font-semibold text-black/85">
                 Дараагийн алхам?
               </div>
-              <div className="mt-1 text-white/60">
+              <div className="mt-1 text-black/60">
                 Илүү олон контент үзэх бол “Контентууд” хэсэг рүү ор.
               </div>
             </div>
@@ -199,12 +192,12 @@ export default function FreeLessonPage() {
                 onClick={() => router.push("/free")}
                 className="
                   rounded-full border border-white/10 bg-white/5
-                  px-5 py-3 text-sm font-semibold text-white/85
+                  px-5 py-3 text-sm font-semibold text-black/85
                   hover:bg-white/10 hover:border-white/20
                   transition
                 "
               >
-                Бүх үнэгүй →
+                Бүх үнэгүй 
               </button>
 
               <button
@@ -212,13 +205,13 @@ export default function FreeLessonPage() {
                 className="
                   rounded-full border-2 border-cyan-400/50
                   bg-gradient-to-r from-cyan-500 to-blue-600
-                  px-5 py-3 text-sm font-extrabold text-white
+                  px-5 py-3 text-sm font-extrabold text-black
                   shadow-[0_0_18px_rgba(56,189,248,0.55)]
                   hover:shadow-[0_0_34px_rgba(56,189,248,1)]
                   transition-all duration-300
                 "
               >
-                Контентууд →
+                Контентууд 
               </button>
             </div>
           </div>

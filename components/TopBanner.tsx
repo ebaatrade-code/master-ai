@@ -38,14 +38,14 @@ function normalizeHref(href?: BannerHref): string | null {
 function variantClasses(variant: BannerConfig["variant"]) {
   switch (variant) {
     case "promo":
-      return "bg-gradient-to-r from-fuchsia-600 via-pink-600 to-rose-600 text-white";
+      return "bg-gradient-to-r from-fuchsia-600 via-pink-600 to-rose-600 text-black";
     case "success":
-      return "bg-gradient-to-r from-emerald-600 via-green-600 to-lime-600 text-white";
+      return "bg-gradient-to-r from-emerald-600 via-green-600 to-lime-600 text-black";
     case "danger":
-      return "bg-gradient-to-r from-red-600 via-rose-600 to-orange-600 text-white";
+      return "bg-gradient-to-r from-red-600 via-rose-600 to-orange-600 text-black";
     case "info":
     default:
-      return "bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 text-white";
+      return "bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 text-black";
   }
 }
 
@@ -199,7 +199,7 @@ export default function TopBanner() {
           {/* Countdown */}
           {parts ? (
             <div className="hidden sm:flex items-center gap-2 rounded-full bg-black/15 px-3 py-1 text-xs font-bold">
-              <span className="text-white/90">⏳</span>
+              <span className="text-black/90">⏳</span>
               <span className="tabular-nums">
                 {pad2(parts.h)}:{pad2(parts.m)}:{pad2(parts.s)}
               </span>
@@ -212,7 +212,7 @@ export default function TopBanner() {
               href={href}
               className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold hover:bg-white/25"
             >
-              ҮЗЭХ →
+              ҮЗЭХ 
             </Link>
           ) : null}
 

@@ -18,6 +18,7 @@ import { getDownloadURL, ref } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 import QPayModal from "@/components/QPayModal";
+import { CheckCircle2 } from "lucide-react";
 
 type Course = {
   title: string;
@@ -118,20 +119,21 @@ function isLessonCompletedFromMap(params: {
   return watched >= 180;
 }
 
+/** ✅ Desktop InfoBlock — white theme (NOT PURCHASED desktop-д л ашиглагдана) */
 function InfoBlock({ title, items }: { title: string; items: string[] }) {
   if (!items?.length) return null;
   return (
-    <div className="rounded-none border-0 bg-transparent p-0">
+    <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-white/90">{title}</div>
+        <div className="text-sm font-extrabold text-black">{title}</div>
       </div>
 
-      <div className="mt-3 h-px w-full bg-white/10" />
+      <div className="mt-3 h-px w-full bg-black/10" />
 
-      <ul className="mt-4 space-y-2 text-sm text-white/70">
+      <ul className="mt-4 space-y-2 text-sm text-black/75">
         {items.map((t, i) => (
           <li key={i} className="flex gap-2">
-            <span className="mt-[2px] text-white/35">•</span>
+            <span className="mt-[2px] text-black/35">•</span>
             <span>{t}</span>
           </li>
         ))}
@@ -172,6 +174,56 @@ function formatExpiresText(ms?: number | null) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+// ✅ Timestamp/string/date -> ms helper
+function tsToMs(x: any): number | null {
+  try {
+    if (!x) return null;
+    if (typeof x === "number" && Number.isFinite(x)) return x;
+    if (typeof x === "string") {
+      const d = new Date(x);
+      const ms = d.getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof x?.toMillis === "function") {
+      const ms = x.toMillis();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof x?.toDate === "function") {
+      const d = x.toDate();
+      const ms = d?.getTime?.();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function renderTextWithLinksAndBreaks(text: string) {
+  const parts = String(text || "").split(/(https?:\/\/[^\s]+|\n)/g);
+
+  return parts.map((part, i) => {
+    if (part === "\n") return <br key={`br-${i}`} />;
+
+    const isUrl = /^https?:\/\/[^\s]+$/.test(part);
+    if (isUrl) {
+      return (
+        <a
+          key={`a-${i}`}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-black underline underline-offset-2 hover:text-black/80 transition"
+        >
+          {part}
+        </a>
+      );
+    }
+
+    return <span key={`t-${i}`}>{part}</span>;
   });
 }
 
@@ -376,6 +428,7 @@ export default function CoursePage() {
     run();
   }, [loading, courseId, router]);
 
+  // ✅ expiresAt унших + буруу expiresAt бол автоматаар засах (expiresAt < purchasedAt үед)
   useEffect(() => {
     const run = async () => {
       if (!isPurchased) {
@@ -390,13 +443,42 @@ export default function CoursePage() {
         const userSnap = await getDoc(doc(db, "users", user.uid));
         const data = userSnap.exists() ? (userSnap.data() as any) : null;
 
-        const p = data?.purchases?.[courseId];
-        const exp = p?.expiresAt as Timestamp | undefined;
+        const p = data?.purchases?.[courseId] ?? null;
 
-        const ms = exp?.toMillis?.() ?? null;
-        setExpiresAtMs(ms);
+        const purchasedMs = tsToMs(p?.purchasedAt);
+        const expMsRaw = tsToMs(p?.expiresAt);
 
-        if (ms && Date.now() > ms) setIsExpired(true);
+        // durationDays: purchase дээр байвал тэрийг, байхгүй бол course дээрхийг ашиглана
+        const ddFromPurchase = Number(p?.durationDays);
+        const ddFromCourse = Number(course?.durationDays);
+        const durationDays =
+          (Number.isFinite(ddFromPurchase) && ddFromPurchase > 0 ? ddFromPurchase : null) ??
+          (Number.isFinite(ddFromCourse) && ddFromCourse > 0 ? ddFromCourse : null) ??
+          30;
+
+        // ✅ RULE:
+        // 1) expiresAt байхгүй -> purchasedAt + durationDays
+        // 2) expiresAt < purchasedAt -> purchasedAt + durationDays (self-heal)
+        let finalExpMs: number | null = expMsRaw ?? null;
+
+        if (purchasedMs && (!finalExpMs || (finalExpMs && finalExpMs < purchasedMs))) {
+          finalExpMs = purchasedMs + durationDays * 24 * 60 * 60 * 1000;
+
+          // ✅ best-effort self-heal write (өөрийн user doc-оо засна)
+          try {
+            await updateDoc(doc(db, "users", user.uid), {
+              [`purchases.${courseId}.expiresAt`]: Timestamp.fromMillis(finalExpMs),
+              [`purchases.${courseId}.durationDays`]: durationDays,
+              [`purchases.${courseId}.updatedAt`]: serverTimestamp(),
+            });
+          } catch {
+            // rules зөвшөөрөхгүй бол дуугүй өнгөрнө (UI дээр зөв харагдана)
+          }
+        }
+
+        setExpiresAtMs(finalExpMs);
+
+        if (finalExpMs && Date.now() > finalExpMs) setIsExpired(true);
         else setIsExpired(false);
       } catch (e) {
         console.error("load purchase expiry error:", e);
@@ -406,7 +488,7 @@ export default function CoursePage() {
     };
 
     run();
-  }, [isPurchased, user?.uid, courseId]);
+  }, [isPurchased, user?.uid, courseId, course?.durationDays]);
 
   useEffect(() => {
     if (!expiresAtMs) return;
@@ -514,7 +596,11 @@ export default function CoursePage() {
   }, [isPurchased, isExpired, lessons, byLessonSec]);
 
   if (fetching) {
-    return <div className="mx-auto max-w-6xl px-6 py-10 text-white/70">Уншиж байна...</div>;
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-10 text-black bg-white min-h-[calc(100vh-80px)]">
+        Уншиж байна...
+      </div>
+    );
   }
   if (!course) return null;
 
@@ -543,7 +629,7 @@ export default function CoursePage() {
   ];
 
   // =========================================================
-  // ✅ PURCHASED VIEW (ХЭВЭЭР)
+  // ✅ PURCHASED VIEW (ХЭВЭЭР) — Mobile-only small tweaks
   // =========================================================
   if (isPurchased) {
     if (isExpired) {
@@ -552,7 +638,7 @@ export default function CoursePage() {
           <div className="relative mx-auto max-w-5xl px-6 pt-10 pb-16">
             <div className="flex justify-center">
               <div className="w-full max-w-3xl px-6 py-2 text-center">
-                <div className="text-2xl sm:text-3xl font-extrabold tracking-wide text-yellow-400">
+                <div className="text-2xl sm:text-3xl font-extrabold tracking-wide text-black">
                   {course.title}
                 </div>
               </div>
@@ -560,19 +646,19 @@ export default function CoursePage() {
 
             <div className="mt-6 flex justify-center">
               <div className="w-full max-w-3xl rounded-2xl border border-red-400/25 bg-black/20 p-6">
-                <div className="text-lg font-extrabold text-red-300">⛔ Сургалтын хугацаа дууссан байна</div>
+                <div className="text-lg font-extrabold text-black">⛔ Сургалтын хугацаа дууссан байна</div>
 
-                <div className="mt-2 text-sm text-white/70">
-                  Хугацаа: <span className="text-white/90 font-semibold">{durationLabel}</span>
+                <div className="mt-2 text-sm text-black">
+                  Хугацаа: <span className="text-black font-semibold">{durationLabel}</span>
                 </div>
 
                 {expiresAtMs ? (
-                  <div className="mt-1 text-sm text-white/60">
-                    Дууссан огноо: <span className="text-white/80">{formatExpiresText(expiresAtMs)}</span>
+                  <div className="mt-1 text-sm text-black">
+                    Дууссан огноо: <span className="text-black">{formatExpiresText(expiresAtMs)}</span>
                   </div>
                 ) : null}
 
-                <div className="mt-4 text-sm text-white/65">
+                <div className="mt-4 text-sm text-black">
                   Та дахин идэвхжүүлэх бол “Худалдаж авах” хэсгээс шинэ хугацаатайгаар авна.
                 </div>
 
@@ -580,16 +666,16 @@ export default function CoursePage() {
                   <button
                     type="button"
                     onClick={() => router.push(`/course/${courseId}`)}
-                    className="rounded-full px-6 py-3 text-sm font-extrabold tracking-wide border border-white/12 bg-white/5 hover:bg-white/10"
+                    className="rounded-full px-6 py-3 text-sm font-extrabold tracking-wide border border-white/12 bg-white/5 hover:bg-white/10 text-black"
                   >
-                    Буцах →
+                    Буцах →{" "}
                   </button>
                 </div>
               </div>
             </div>
 
             {toast ? (
-              <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-white backdrop-blur">
+              <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-black backdrop-blur">
                 {toast}
               </div>
             ) : null}
@@ -603,34 +689,34 @@ export default function CoursePage() {
         <div className="relative mx-auto max-w-5xl px-6 pt-10 pb-16">
           <div className="flex justify-center">
             <div className="w-full max-w-3xl px-6 py-2 text-center">
-              <div className="text-2xl sm:text-3xl font-extrabold tracking-wide text-yellow-400">
+              <div className="text-2xl sm:text-3xl font-extrabold tracking-wide text-black">
                 {course.title}
               </div>
             </div>
           </div>
 
           <div className="mt-6 flex justify-center">
-            <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="w-full max-w-3xl rounded-2xl border border-black bg-white p-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-white/85">Таны ахиц</div>
-                <div className="text-sm font-extrabold text-white">{coursePercent}%</div>
+                <div className="text-sm font-semibold text-black">Таны ахиц</div>
+                <div className="text-sm font-extrabold text-black">{coursePercent}%</div>
               </div>
 
-              <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-black/10">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all"
                   style={{ width: `${coursePercent}%` }}
                 />
               </div>
 
-              <div className="mt-2 text-xs text-white/55">
+              <div className="mt-2 text-xs text-black">
                 {coursePercent < 20
                   ? "Эхэлж байна — 1–2 хичээл үзэхэд ахиц мэдрэгдэнэ."
                   : coursePercent < 70
-                  ? "Сайн явж байна — тогтмол үзвэл хурдан дуусна."
-                  : coursePercent < 100
-                  ? "Бараг дууслаа — сүүлийн хэсгээ хийчих!"
-                  : "Дууссан ✅"}
+                    ? "Сайн явж байна — тогтмол үзвэл хурдан дуусна."
+                    : coursePercent < 100
+                      ? "Бараг дууслаа — сүүлийн хэсгээ заавал үзээрэй."
+                      : "Хичээлээ бүрэн үзэж дууссан✅"}
               </div>
             </div>
           </div>
@@ -638,15 +724,17 @@ export default function CoursePage() {
           <div className="mt-6 flex justify-center">
             <div className="w-full max-w-3xl rounded-2xl border border-amber-300/25 bg-black/20 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.40)]">
               <div className="mb-3 flex items-center justify-between">
-                <div className="text-sm font-semibold text-white/85">Видео үзэх</div>
+                {/* ✅ MOBILE жижиг, md+ дээр хуучин хэвээр */}
+                <div className="text-[12px] md:text-sm font-semibold text-black">Видео үзэх</div>
 
-                <div className="text-xs flex items-center gap-2">
-                  <span className="rounded-full border border-emerald-300/25 bg-emerald-500/10 px-3 py-1 text-emerald-100">
-                    Хугацаа: {durationLabel}
+                {/* ✅ MOBILE жижиг, md+ дээр хуучин хэвээр */}
+                <div className="text-[11px] md:text-xs flex items-center gap-2">
+                  <span className="rounded-full border border-emerald-300/25 bg-emerald-500/10 px-2 md:px-3 py-0.5 md:py-1 text-black">
+                    ХУГАЦАА: {durationLabel}
                   </span>
 
                   {expiresAtMs ? (
-                    <span className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-white/70">
+                    <span className="rounded-full border border-white/10 bg-black/30 px-2 md:px-3 py-0.5 md:py-1 text-black">
                       Дуусах: {formatExpiresText(expiresAtMs)}
                     </span>
                   ) : null}
@@ -654,7 +742,7 @@ export default function CoursePage() {
               </div>
 
               {videoLoading ? (
-                <div className="rounded-xl border border-white/10 bg-black/25 p-6 text-white/70">
+                <div className="rounded-xl border border-white/10 bg-black/25 p-6 text-black">
                   Видеог ачаалж байна...
                 </div>
               ) : videoSrc ? (
@@ -720,7 +808,7 @@ export default function CoursePage() {
                   />
                 </div>
               ) : (
-                <div className="rounded-xl border border-white/10 bg-black/25 p-6 text-white/70">
+                <div className="rounded-xl border border-white/10 bg-black/25 p-6 text-black">
                   Энэ хичээлд видео холбоогүй байна.
                 </div>
               )}
@@ -733,14 +821,13 @@ export default function CoursePage() {
                 type="button"
                 onClick={() => setTab("list")}
                 className={[
-                  "rounded-full px-6 py-2 text-sm font-extrabold tracking-wide transition",
-                  "border border-amber-300/40",
-                  "shadow-[0_10px_30px_rgba(0,0,0,0.25)]",
+                  "rounded-full px-6 py-2 text-sm font-extrabold tracking-wide transition-all duration-200",
+                  "border border-black/10 bg-white",
+                  "shadow-[0_2px_8px_rgba(0,0,0,0.05)]",
                   tab === "list"
-                    ? "bg-amber-400/15 text-yellow-300"
-                    : "bg-black/20 text-yellow-200/80 hover:bg-amber-400/10",
+                    ? "border-amber-400/60 bg-amber-50 text-black"
+                    : "text-black hover:border-black/20 hover:bg-black/[0.02]",
                 ].join(" ")}
-                style={{ borderStyle: "dashed" }}
               >
                 ХИЧЭЭЛИЙН ЖАГСААЛТ
               </button>
@@ -749,14 +836,13 @@ export default function CoursePage() {
                 type="button"
                 onClick={() => setTab("desc")}
                 className={[
-                  "rounded-full px-6 py-2 text-sm font-extrabold tracking-wide transition",
-                  "border border-amber-300/40",
-                  "shadow-[0_10px_30px_rgba(0,0,0,0.25)]",
+                  "rounded-full px-6 py-2 text-sm font-extrabold tracking-wide transition-all duration-200",
+                  "border border-black/10 bg-white",
+                  "shadow-[0_2px_8px_rgba(0,0,0,0.05)]",
                   tab === "desc"
-                    ? "bg-amber-400/15 text-yellow-300"
-                    : "bg-black/20 text-yellow-200/80 hover:bg-amber-400/10",
+                    ? "border-amber-400/60 bg-amber-50 text-black"
+                    : "text-black hover:border-black/20 hover:bg-black/[0.02]",
                 ].join(" ")}
-                style={{ borderStyle: "dashed" }}
               >
                 ХИЧЭЭЛИЙН ТАЙЛБАР
               </button>
@@ -764,93 +850,108 @@ export default function CoursePage() {
           </div>
 
           <div className="mt-6 flex justify-center">
-            <div className="w-full max-w-3xl rounded-2xl border border-amber-300/20 bg-black/15 p-4">
-              {tab === "desc" ? (
-                <div className="min-h-[260px] rounded-xl border border-white/10 bg-black/25 p-5">
-                  <div className="text-sm font-bold text-yellow-300">
-                    {selectedLesson ? (
-                      <>
-                        {lessons.findIndex((x) => x.id === selectedLesson.id) + 1}.{" "}
-                        <span className="text-white/90">{selectedLesson.title}</span>
-                      </>
+            <div className="w-full max-w-3xl rounded-2xl p-[1.5px] bg-gradient-to-r from-yellow-400 via-emerald-400 to-cyan-400">
+              <div className="rounded-2xl bg-white p-4">
+                {tab === "desc" ? (
+                  <div className="min-h-[260px] rounded-xl border border-black/8 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+                    <div className="text-sm font-bold text-black">
+                      {selectedLesson ? (
+                        <>
+                          {lessons.findIndex((x) => x.id === selectedLesson.id) + 1}.{" "}
+                          <span className="text-black font-extrabold tracking-wide">{selectedLesson.title}</span>
+                        </>
+                      ) : (
+                        <span className="text-black">Хичээл сонгоогүй байна.</span>
+                      )}
+                    </div>
+
+                    <div className="mt-4 text-sm leading-7 text-black whitespace-pre-wrap">
+                      {selectedLesson?.description?.trim()
+                        ? renderTextWithLinksAndBreaks(selectedLesson.description)
+                        : "Тайлбар оруулаагүй байна."}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-h-[440px] overflow-auto pr-1">
+                    {lessons.length === 0 ? (
+                      <div className="rounded-xl border border-black/8 bg-white p-6 text-black shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+                        Одоогоор хичээл алга.
+                      </div>
                     ) : (
-                      <span className="text-white/70">Хичээл сонгоогүй байна.</span>
+                      <div className="space-y-2">
+                        {lessons.map((l, idx) => {
+                          const active = l.id === selectedLessonId;
+                          const t = fmtDuration(l.durationSec);
+                          const completed = isLessonCompletedFromMap({
+                            lessonId: l.id,
+                            durationSec: l.durationSec,
+                            byLessonSec,
+                          });
+
+                          return (
+                            <button
+                              key={l.id}
+                              onClick={() => setSelectedLessonId(l.id)}
+                              className={[
+                                "group w-full rounded-2xl border text-left transition-all duration-200",
+                                "focus:outline-none focus:ring-2 focus:ring-black/5",
+                                active
+                                  ? "border-emerald-500/40 bg-emerald-50 shadow-[0_2px_8px_rgba(16,185,129,0.10)]"
+                                  : "border-black/8 bg-white hover:border-black/15 hover:bg-black/[0.015]",
+                              ].join(" ")}
+                            >
+                              <div className="flex items-center gap-3 px-3 py-3">
+                                {/* ✅ MOBILE-д thumbnail (md+ дээр нуусан) */}
+                                <div className="md:hidden h-10 w-14 shrink-0 overflow-hidden rounded-xl border border-black/10 bg-black/5">
+                                  {course.thumbnailUrl ? (
+                                    <img
+                                      src={course.thumbnailUrl}
+                                      alt=""
+                                      aria-hidden="true"
+                                      className="h-full w-full object-cover opacity-95"
+                                    />
+                                  ) : null}
+                                </div>
+
+                                {/* ✅ Title + subtitle */}
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-[11px] sm:text-[14px] md:text-[16px] font-black text-black tracking-[0.02em] leading-snug whitespace-normal break-words md:truncate md:whitespace-nowrap">
+                                    {idx + 1}. {l.title}
+                                  </div>
+                                </div>
+
+                                {/* ✅ Right side: completed + duration */}
+                                <div className="shrink-0 flex items-center gap-2">
+                                  {completed ? (
+                                    <div className="hidden sm:flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-black">
+                                      <CheckCircle2 size={12} strokeWidth={2.2} />
+                                      Дууссан
+                                    </div>
+                                  ) : null}
+
+                                  {t ? (
+                                    <div className="rounded-full border border-black/8 bg-white px-2 py-0.5 text-[10px] font-semibold text-black">
+                                      {t}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
-
-                  <div className="mt-4 text-sm leading-7 text-white/75">
-                    {selectedLesson?.description?.trim() ? selectedLesson.description : "Тайлбар оруулаагүй байна."}
-                  </div>
-                </div>
-              ) : (
-                <div className="max-h-[440px] overflow-auto pr-1">
-                  {lessons.length === 0 ? (
-                    <div className="rounded-xl border border-white/10 bg-black/25 p-6 text-white/70">
-                      Одоогоор хичээл алга.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {lessons.map((l, idx) => {
-                        const active = l.id === selectedLessonId;
-                        const t = fmtDuration(l.durationSec);
-                        const completed = isLessonCompletedFromMap({
-                          lessonId: l.id,
-                          durationSec: l.durationSec,
-                          byLessonSec,
-                        });
-
-                        return (
-                          <button
-                            key={l.id}
-                            onClick={() => setSelectedLessonId(l.id)}
-                            className={[
-                              "group w-full rounded-2xl border px-4 py-3 text-left transition",
-                              "focus:outline-none focus:ring-2 focus:ring-white/10",
-                              active
-                                ? "border-2 border-emerald-300/80 bg-emerald-400/10 shadow-[0_0_0_1px_rgba(52,211,153,0.20),0_0_22px_rgba(52,211,153,0.35),0_18px_60px_rgba(0,0,0,0.35)]"
-                                : "border border-white/10 bg-black/20 hover:bg-white/5 hover:border-white/15",
-                            ].join(" ")}
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="truncate text-[16px] font-black text-white tracking-wide">
-                                  {idx + 1}. {l.title}
-                                </div>
-
-                                <div className="mt-1 text-xs text-white/55">
-                                  {active ? "Одоо үзэж байна" : completed ? "Үзсэн" : "Дарж сонгоно"}
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                {completed ? (
-                                  <div className="shrink-0 rounded-full border border-emerald-300/25 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-100">
-                                    ✅ Үзсэн
-                                  </div>
-                                ) : null}
-
-                                {t ? (
-                                  <div className="shrink-0 rounded-full border border-white/12 bg-black/25 px-3 py-1 text-[11px] font-semibold text-white/70">
-                                    {t}
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
+
+            {toast ? (
+              <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-black backdrop-blur">
+                {toast}
+              </div>
+            ) : null}
           </div>
-
-          {toast ? (
-            <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-white backdrop-blur">
-              {toast}
-            </div>
-          ) : null}
         </div>
       </div>
     );
@@ -861,7 +962,7 @@ export default function CoursePage() {
   // =========================================================
   return (
     <>
-      {/* MOBILE */}
+      {/* MOBILE (аль хэдийн цагаан байсан — хэвээр) */}
       <div className="lg:hidden min-h-[calc(100vh-80px)] bg-white text-black overflow-x-hidden">
         <div className="mx-auto max-w-6xl px-6 pt-8 pb-12">
           {course.thumbnailUrl ? (
@@ -875,18 +976,18 @@ export default function CoursePage() {
           <div className="mt-6">
             <div className="flex items-center gap-3">
               <div className="mt-[10px] h-5 w-[2px] rounded-full bg-black/20" />
-              <div className="text-xs font-extrabold tracking-wide text-black/45">БҮЛЭГ 1</div>
+              <div className="text-xs font-extrabold tracking-wide text-black">Эхлэл</div>
             </div>
 
             <div className="mt-3 min-w-0">
               <div className="text-xl font-extrabold text-black leading-snug">{course.title}</div>
 
-              <div className="mt-2 text-sm leading-6 text-black/70">
+              <div className="mt-2 text-sm leading-4 text-black/60">
                 {course.shortDescription?.trim()
                   ? course.shortDescription
                   : course.description?.trim()
-                  ? course.description
-                  : "Энэ сургалтаар системтэйгээр үзэж, давтаж хийж сурна."}
+                    ? course.description
+                    : "Энэ сургалтаар системтэйгээр үзэж, давтаж хийж сурна."}
               </div>
             </div>
           </div>
@@ -907,7 +1008,7 @@ export default function CoursePage() {
                   </div>
 
                   {course.oldPrice ? (
-                    <div className="mt-0.5 text-sm font-bold line-through text-red-500">
+                    <div className="mt-0.5 text-sm font-bold line-through text-black">
                       {money(Number(course.oldPrice))}₮
                     </div>
                   ) : null}
@@ -923,7 +1024,7 @@ export default function CoursePage() {
                   mt-3 w-full rounded-2xl
                   px-5 py-3
                   text-[13px] font-extrabold uppercase tracking-wide
-                  text-white
+                  text-black
                   bg-gradient-to-r from-cyan-400 to-blue-500
                   shadow-[0_10px_24px_rgba(0,120,255,0.22)]
                   hover:from-cyan-300 hover:to-blue-400
@@ -942,7 +1043,7 @@ export default function CoursePage() {
                 onClick={() => setNpTab("content")}
                 className={[
                   "h-9 rounded-xl text-center text-[11px] font-extrabold tracking-wide transition",
-                  npTab === "content" ? "bg-black/5 text-black border border-black/10" : "text-black/55 hover:text-black",
+                  npTab === "content" ? "bg-black/5 text-black border border-black/10" : "text-black hover:text-black",
                 ].join(" ")}
               >
                 Хичээлийн агуулга
@@ -953,7 +1054,7 @@ export default function CoursePage() {
                 onClick={() => setNpTab("details")}
                 className={[
                   "h-9 rounded-xl text-center text-[11px] font-extrabold tracking-wide transition",
-                  npTab === "details" ? "bg-black/5 text-black border border-black/10" : "text-black/55 hover:text-black",
+                  npTab === "details" ? "bg-black/5 text-black border border-black/10" : "text-black hover:text-black",
                 ].join(" ")}
               >
                 Дэлгэрэнгүй мэдээлэл
@@ -964,7 +1065,7 @@ export default function CoursePage() {
               {npTab === "content" ? (
                 <div className="space-y-3">
                   {lessons.length === 0 ? (
-                    <div className="rounded-2xl border border-black/10 bg-white p-6 text-black/70 shadow-sm">
+                    <div className="rounded-2xl border border-black/10 bg-white p-6 text-black shadow-sm">
                       Одоогоор lesson алга.
                     </div>
                   ) : (
@@ -985,17 +1086,16 @@ export default function CoursePage() {
                               />
                             ) : null}
                           </div>
-
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-[15px] font-black text-black tracking-wide">
+                            <div className="truncate text-[12px] font-black text-black tracking-wide">
                               {idx + 1}. {l.title}
                             </div>
-                            <div className="mt-1 line-clamp-1 text-xs text-black/60">
+                            <div className="mt-1 line-clamp-1 text-xs text-black">
                               {l.description?.trim() ? l.description : "Худалдаж авсны дараа энэ хичээл нээгдэнэ."}
                             </div>
                           </div>
 
-                          <div className="shrink-0 text-right text-xs font-bold text-black/70">{t ? t : "—"}</div>
+                          <div className="shrink-0 text-right text-xs font-bold text-black">{t ? t : "—"}</div>
                         </div>
                       );
                     })
@@ -1004,10 +1104,13 @@ export default function CoursePage() {
               ) : (
                 <div className="rounded-2xl border border-black/10 bg-white p-5 space-y-6 shadow-sm">
                   <MobileInfoBlock
-                    title="Энэ сургалт хэнд тохирох вэ?"
+                    title="Энэ сургалтанд ямар ямар хичээлүүд багтсан бэ?"
                     items={whoForItems.length ? whoForItems : whoForFallback}
                   />
-                  <MobileInfoBlock title="Юу сурах вэ?" items={learnItems.length ? learnItems : learnFallback} />
+                  <MobileInfoBlock
+                    title="Та энэ сургалтыг авсанаар юу сурах вэ?"
+                    items={learnItems.length ? learnItems : learnFallback}
+                  />
                 </div>
               )}
             </div>
@@ -1021,26 +1124,26 @@ export default function CoursePage() {
         </div>
       </div>
 
-      {/* DESKTOP */}
-      <div
-        className="hidden lg:block min-h-[calc(100vh-80px)] text-white overflow-x-hidden"
-        style={{
-          background:
-            "radial-gradient(1200px 700px at 50% 0%, rgba(120,120,120,0.10), rgba(0,0,0,0.95)), radial-gradient(circle at 10% 20%, rgba(255,200,0,0.05), transparent 45%), radial-gradient(circle at 90% 80%, rgba(0,255,170,0.06), transparent 55%)",
-        }}
-      >
-        <div className="mx-auto max-w-6xl px-6 pt-8 pb-12">
+      {/* DESKTOP — ✅ ЦАГААН БОЛГОСОН */}
+      <div className="hidden lg:block min-h-[calc(100vh-80px)] bg-white text-black overflow-x-hidden">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden lg:block">
+          <div className="absolute inset-0 bg-[radial-gradient(900px_500px_at_50%_0%,rgba(0,140,255,0.10),transparent_60%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(700px_420px_at_15%_35%,rgba(34,211,238,0.10),transparent_55%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(700px_420px_at_85%_70%,rgba(99,102,241,0.10),transparent_55%)]" />
+        </div>
+
+        <div className="relative mx-auto max-w-6xl px-6 pt-8 pb-12">
           <div className="hidden lg:block">
             {course.thumbnailUrl ? (
-              <div className="mx-auto w-full max-w-6xl overflow-hidden rounded-[28px] border border-white/10 bg-black/35 shadow-[0_22px_90px_rgba(0,0,0,0.55)]">
+              <div className="mx-auto w-full max-w-6xl overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-sm">
                 <div className="relative aspect-video w-full">
                   <img
                     src={course.thumbnailUrl}
                     alt=""
                     aria-hidden="true"
-                    className="absolute inset-0 h-full w-full object-cover blur-3xl scale-125 opacity-45"
+                    className="absolute inset-0 h-full w-full object-cover blur-3xl scale-125 opacity-35"
                   />
-                  <div className="absolute inset-0 bg-black/55" />
+                  <div className="absolute inset-0 bg-white/55" />
                   <img src={course.thumbnailUrl} alt={course.title} className="relative z-10 h-full w-full object-contain" />
                 </div>
               </div>
@@ -1050,30 +1153,30 @@ export default function CoursePage() {
               <section className="px-1">
                 <div className="mb-6">
                   <div className="flex items-center gap-3">
-                    <div className="mt-[10px] h-5 w-[2px] rounded-full bg-white/20" />
-                    <div className="text-xs font-extrabold tracking-wide text-white/45">БҮЛЭГ 1</div>
+                    <div className="mt-[10px] h-5 w-[2px] rounded-full bg-black/15" />
+                    <div className="text-xs font-extrabold tracking-wide text-black">Эхлэл</div>
                   </div>
 
                   <div className="mt-2 flex gap-3">
-                    <div className="mt-[8px] h-7 w-[2px] rounded-full bg-white/25" />
+                    <div className="mt-[8px] h-7 w-[2px] rounded-full bg-black/10" />
                     <div className="min-w-0">
-                      <div className="truncate text-xl font-extrabold text-white/90">{course.title}</div>
-                      <div className="mt-2 text-sm leading-6 text-white/60">
+                      <div className="truncate text-xl font-extrabold text-black">{course.title}</div>
+                      <div className="mt-2 text-sm leading-5 text-black/60">
                         {course.shortDescription?.trim()
                           ? course.shortDescription
                           : course.description?.trim()
-                          ? course.description
-                          : "Энэ сургалтаар системтэйгээр үзэж, давтаж хийж сурна."}
+                            ? course.description
+                            : "Энэ сургалтаар системтэйгээр үзэж, давтаж хийж сурна."}
                       </div>
                     </div>
                   </div>
 
-                  <div className="mt-5 h-px w-full bg-white/10" />
+                  <div className="mt-5 h-px w-full bg-black/10" />
                 </div>
 
                 <div className="space-y-4">
                   {lessons.length === 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-black/20 p-6 text-white/70">
+                    <div className="rounded-2xl border border-black/10 bg-white p-6 text-black shadow-sm">
                       Одоогоор lesson алга.
                     </div>
                   ) : (
@@ -1085,29 +1188,40 @@ export default function CoursePage() {
                           key={l.id}
                           className={[
                             "flex items-center gap-5",
-                            "rounded-3xl border border-white/10",
-                            "bg-black/20 px-6 py-6",
+                            "rounded-3xl border border-black/10",
+                            "bg-white px-6 py-6",
                             "min-h-[120px]",
-                            "hover:bg-black/30 transition",
+                            "shadow-sm hover:shadow-md transition",
                           ].join(" ")}
                         >
-                          <div className="h-16 w-28 overflow-hidden rounded-2xl border border-white/10 bg-black/25">
+                          <div className="h-16 w-28 overflow-hidden rounded-2xl border border-black/10 bg-black/5">
                             {course.thumbnailUrl ? (
-                              <img src={course.thumbnailUrl} alt="" aria-hidden="true" className="h-full w-full object-cover opacity-90" />
+                              <img
+                                src={course.thumbnailUrl}
+                                alt=""
+                                aria-hidden="true"
+                                className="h-full w-full object-cover opacity-95"
+                              />
                             ) : null}
                           </div>
 
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-[16px] font-black text-white tracking-wide drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]">
+                            {/* ✅ Title — Primary emphasis */}
+                            <div
+                              className="truncate text-[12px] !font-black !text-black tracking-[0.01em]"
+                              style={{ fontWeight: 800 }}
+                            >
                               {idx + 1}. {l.title}
                             </div>
-                            <div className="mt-2 line-clamp-2 text-xs text-white/55">
+
+                            {/* ✅ Description — Secondary / subdued */}
+                            <div className="mt-2 line-clamp-3 text-xs text-black leading-relaxed">
                               {l.description?.trim() ? l.description : "Худалдаж авсны дараа энэ хичээл нээгдэнэ."}
                             </div>
                           </div>
 
                           <div className="shrink-0 text-right">
-                            <div className="text-xs font-extrabold text-white/70">{t ? t : "—"}</div>
+                            <div className="text-xs font-extrabold text-black">{t ? t : "—"}</div>
                           </div>
                         </div>
                       );
@@ -1123,53 +1237,39 @@ export default function CoursePage() {
                       relative
                       rounded-2xl
                       border
-                      border-cyan-300/70
-                      bg-black/40
+                      border-cyan-300/80
+                      bg-white
                       p-6
                       shadow-[
-                        inset_0_0_12px_rgba(34,211,238,0.35),
-                        0_0_12px_rgba(34,211,238,0.55),
-                        0_0_32px_rgba(34,211,238,0.45),
-                        0_0_72px_rgba(34,211,238,0.25)
+                        inset_0_0_10px_rgba(34,211,238,0.22),
+                        0_10px_30px_rgba(0,0,0,0.08),
+                        0_0_22px_rgba(34,211,238,0.18)
                       ]
                       transition-all
                       duration-300
-                      hover:border-cyan-200
+                      hover:border-cyan-300
                       hover:shadow-[
-                        inset_0_0_18px_rgba(34,211,238,0.55),
-                        0_0_18px_rgba(34,211,238,0.8),
-                        0_0_48px_rgba(34,211,238,0.6),
-                        0_0_96px_rgba(34,211,238,0.35)
+                        inset_0_0_14px_rgba(34,211,238,0.28),
+                        0_14px_40px_rgba(0,0,0,0.10),
+                        0_0_30px_rgba(34,211,238,0.22)
                       ]
                     "
                   >
                     <div className="mb-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3 text-lg font-extrabold text-white">
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-white">
-                          <span className="h-2.5 w-2.5 rounded-full bg-white" />
+                      <div className="flex items-center gap-3 text-lg font-extrabold text-black">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-black/70">
+                          <span className="h-2.5 w-2.5 rounded-full bg-black/70" />
                         </span>
                         <span className="tracking-wide">{durationLabel}</span>
                       </div>
 
                       <div className="text-right">
-                        <div
-                          className="
-                            text-2xl font-extrabold tracking-tight
-                            text-white
-                            drop-shadow-[0_0_10px_rgba(255,255,255,0.9)]
-                          "
-                        >
+                        <div className="text-2xl font-extrabold tracking-tight text-black">
                           {money(Number(course.price ?? 0))}₮
                         </div>
 
                         {course.oldPrice && (
-                          <div
-                            className="
-                              mt-0.5 text-sm font-extrabold line-through
-                              text-red-500
-                              drop-shadow-[0_0_10px_rgba(239,68,68,1)]
-                            "
-                          >
+                          <div className="mt-0.5 text-sm font-extrabold line-through text-black">
                             {money(Number(course.oldPrice))}₮
                           </div>
                         )}
@@ -1185,27 +1285,33 @@ export default function CoursePage() {
                         w-full rounded-full
                         px-6 py-4
                         text-sm font-extrabold uppercase tracking-wide
-                        text-white
-                        bg-gradient-to-r from-cyan-400 to-blue-500
-                        shadow-[0_0_35px_rgba(0,180,255,0.75)]
+                        text-black
+                        bg-gradient-to-r from-cyan-400 to-blue-400
+                        shadow-[0_12px_28px_rgba(0,120,255,0.25)]
                         hover:from-cyan-300 hover:to-blue-400
-                        hover:shadow-[0_0_45px_rgba(0,180,255,0.95)]
+                        hover:shadow-[0_14px_34px_rgba(0,120,255,0.30)]
                         transition-all duration-300
                       "
                     >
-                      ХУДАЛДАЖ АВАХ →
+                      ХУДАЛДАЖ АВАХ
                     </button>
                   </div>
                 </div>
 
-                <InfoBlock title="Энэ сургалт хэнд тохирох вэ?" items={whoForItems.length ? whoForItems : whoForFallback} />
-                <InfoBlock title="Юу сурах вэ?" items={learnItems.length ? learnItems : learnFallback} />
+                <InfoBlock
+                  title="Энэ сургалтанд ямар ямар хичээлүүд багтсан бэ?"
+                  items={whoForItems.length ? whoForItems : whoForFallback}
+                />
+                <InfoBlock
+                  title="Та энэ сургалтыг авсанаар юу сурах вэ?"
+                  items={learnItems.length ? learnItems : learnFallback}
+                />
               </aside>
             </div>
           </div>
 
           {toast ? (
-            <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-white backdrop-blur">
+            <div className="fixed right-4 top-4 z-[60] rounded-xl border border-black/10 bg-white/95 px-4 py-2 text-sm text-black shadow-sm">
               {toast}
             </div>
           ) : null}

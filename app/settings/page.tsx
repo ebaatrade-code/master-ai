@@ -152,6 +152,18 @@ function Icon({
   }
 }
 
+/* =========================
+   Light tokens (Apple-like)
+========================= */
+// ✅ Stroke = subtle gray, not white
+const STROKE = "border-black/10";
+const STROKE_STRONG = "border-black/14";
+
+// ✅ Shadows: soft + layered (not heavy)
+const SHADOW_CARD = "shadow-[0_18px_55px_rgba(0,0,0,0.10)]";
+const SHADOW_INNER = "shadow-[0_0_0_1px_rgba(0,0,0,0.04)]";
+const SHADOW_HOVER = "hover:shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_18px_55px_rgba(0,0,0,0.12)]";
+
 function Pill({
   active,
   onClick,
@@ -170,32 +182,41 @@ function Pill({
       type="button"
       onClick={onClick}
       className={cn(
-        "group w-full rounded-2xl border px-4 py-3 text-left transition",
-        active
-          ? "border-white/25 bg-white/10 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
-          : "border-white/10 bg-black/35 hover:bg-black/55 hover:border-white/15"
+        "group w-full rounded-2xl border bg-white px-4 py-3 text-left transition",
+        SHADOW_INNER,
+        SHADOW_HOVER,
+        active ? `${STROKE_STRONG}` : `${STROKE}`
       )}
     >
       <div className="flex items-center gap-3">
         <div
           className={cn(
-            "grid h-10 w-10 place-items-center rounded-2xl border",
-            active ? "border-white/25 bg-white/10" : "border-white/10 bg-white/5"
+            "grid h-10 w-10 place-items-center rounded-2xl border bg-white",
+            SHADOW_INNER,
+            active ? STROKE_STRONG : STROKE
           )}
         >
-          <span className="text-white/90">{leftIcon}</span>
+          <span className="text-black/85">{leftIcon}</span>
         </div>
+
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <div className="truncate text-sm font-extrabold text-white">{title}</div>
+            <div className="truncate text-sm font-black text-black">{title}</div>
+
             {active && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] font-bold text-white/85">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border bg-white px-2 py-0.5 text-[11px] font-extrabold text-black",
+                  STROKE,
+                  SHADOW_INNER
+                )}
+              >
                 <Icon name="check" className="h-3.5 w-3.5" />
                 Сонгосон
               </span>
             )}
           </div>
-          {subtitle && <div className="mt-0.5 text-xs text-white/60">{subtitle}</div>}
+          {subtitle && <div className="mt-0.5 text-xs text-neutral-600">{subtitle}</div>}
         </div>
       </div>
     </button>
@@ -214,15 +235,15 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/40 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+    <div className={cn("rounded-2xl border bg-white p-5", STROKE, SHADOW_INNER)}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5">
-            {icon}
+          <div className={cn("grid h-10 w-10 place-items-center rounded-2xl border bg-white", STROKE, SHADOW_INNER)}>
+            <span className="text-black/85">{icon}</span>
           </div>
           <div>
-            <div className="text-sm font-extrabold text-white">{title}</div>
-            {subtitle ? <div className="text-xs text-white/55">{subtitle}</div> : null}
+            <div className="text-sm font-black text-black">{title}</div>
+            {subtitle ? <div className="text-xs font-semibold text-neutral-600">{subtitle}</div> : null}
           </div>
         </div>
       </div>
@@ -249,10 +270,13 @@ function Field({
 }) {
   return (
     <label className="block">
-      <div className="mb-2 text-xs font-bold text-white/70">{label}</div>
+      <div className="mb-2 text-xs font-extrabold text-neutral-700">{label}</div>
       <input
         className={cn(
-          "w-full rounded-2xl border border-white/12 bg-black/55 px-4 py-3 text-sm text-white placeholder:text-white/35 outline-none focus:border-white/25 focus:bg-black/65",
+          "w-full rounded-2xl border bg-white px-4 py-3 text-sm text-black placeholder:text-neutral-400 outline-none transition",
+          STROKE,
+          SHADOW_INNER,
+          "focus:border-black/20 focus:shadow-[0_0_0_3px_rgba(0,0,0,0.06)]",
           disabled && "opacity-60 cursor-not-allowed"
         )}
         disabled={disabled}
@@ -359,39 +383,50 @@ export default function SettingsPage() {
     }
   };
 
-  // ---- Premium layout styles ----
-  const sectionLine = "border-t border-white/10 pt-8 mt-8";
-  const glassPanel =
-    "rounded-3xl border border-white/10 bg-black/55 backdrop-blur-xl shadow-[0_22px_90px_rgba(0,0,0,0.55)]";
-  const goldBtn =
-    "inline-flex items-center justify-center gap-2 rounded-full bg-[#f5d37b] px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60";
+  // ---- Premium layout styles (LIGHT) ----
+  const sectionLine = "pt-8 mt-8"; // ✅ remove divider line (clean)
+  const panel =
+    cn(
+      "rounded-3xl border bg-white p-6",
+      STROKE,
+      SHADOW_CARD
+    );
+
   const outlineBtn =
-    "rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10";
+    cn(
+      "rounded-full border bg-white px-4 py-2 text-sm font-extrabold text-black transition",
+      STROKE,
+      SHADOW_INNER,
+      SHADOW_HOVER
+    );
 
   const chip =
-    "inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/40 px-3 py-2 text-xs text-white/75";
+    cn(
+      "inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-xs text-black",
+      STROKE,
+      SHADOW_INNER
+    );
 
   return (
-    <div className="min-h-screen text-white">
+    <div className="min-h-screen bg-[#f5f5f7] text-black">
       <div className="mx-auto max-w-5xl px-5 py-10">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight">Тохиргоо</h1>
+            <h1 className="text-4xl font-black tracking-tight text-black">Тохиргоо</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <div className={chip}>
               <Icon name="clock" className="h-4 w-4" />
-              <span className="font-semibold">Сүүлд:</span>
-              <span className="text-white/90">{lastLoginText}</span>
+              <span className="font-extrabold">Сүүлд:</span>
+              <span className="text-black/70 font-semibold">{lastLoginText}</span>
             </div>
 
             <Link href="/profile" className={outlineBtn}>
               Profile
             </Link>
 
-            {/* ✅ ADDED: Progress -> /my-content (Миний сургалтууд) */}
             <Link href="/my-content" className={outlineBtn}>
               Progress
             </Link>
@@ -399,7 +434,9 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={savePrefs}
-              className="rounded-full bg-white px-5 py-2 text-sm font-extrabold text-black hover:opacity-90"
+              className={cn(
+                "rounded-full bg-white px-5 py-2 text-sm font-black text-black transition hover:opacity-90 disabled:opacity-60"
+              )}
             >
               Хадгалах
             </button>
@@ -410,21 +447,23 @@ export default function SettingsPage() {
         {toast && (
           <div
             className={cn(
-              "mt-6 rounded-2xl border px-4 py-3 text-sm",
-              toast.type === "ok" && "border-emerald-400/30 bg-emerald-400/10 text-emerald-50",
-              toast.type === "err" && "border-red-400/30 bg-red-400/10 text-red-50",
-              toast.type === "info" && "border-white/15 bg-white/5 text-white/80"
+              "mt-6 rounded-2xl border bg-white px-4 py-3 text-sm",
+              STROKE,
+              SHADOW_INNER,
+              toast.type === "ok" && "text-emerald-700",
+              toast.type === "err" && "text-red-700",
+              toast.type === "info" && "text-neutral-700"
             )}
           >
-            <span className="font-semibold">{toast.text}</span>
+            <span className="font-extrabold">{toast.text}</span>
           </div>
         )}
 
         {/* Security */}
         <section className={sectionLine}>
-          <div className="text-xl font-extrabold">Аюулгүй байдал</div>
+          <div className="text-xl font-black text-black">Аюулгүй байдал</div>
 
-          <div className={cn("mt-5 p-6", glassPanel)}>
+          <div className={cn("mt-5", panel)}>
             <div className="grid gap-5 md:grid-cols-2">
               {/* Reset */}
               <SectionCard
@@ -433,16 +472,21 @@ export default function SettingsPage() {
                 subtitle="Reset холбоос илгээнэ"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/55 px-3 py-2 text-xs text-white/80">
+                  <div className={cn("inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-xs text-black", STROKE, SHADOW_INNER)}>
                     <Icon name="mail" className="h-4 w-4" />
-                    <span className="font-semibold">{email || "—"}</span>
+                    <span className="font-extrabold">{email || "—"}</span>
                   </div>
 
                   <button
                     type="button"
                     onClick={copyEmail}
                     disabled={!email}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs font-bold text-white/80 hover:bg-white/10 disabled:opacity-60"
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full border bg-white px-3 py-2 text-xs font-extrabold text-black transition disabled:opacity-60",
+                      STROKE,
+                      SHADOW_INNER,
+                      SHADOW_HOVER
+                    )}
                   >
                     <Icon name="copy" className="h-4 w-4" />
                     Copy
@@ -450,7 +494,12 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="mt-4">
-                  <button type="button" onClick={sendReset} disabled={resetSending || !email} className={goldBtn}>
+                  <button
+                    type="button"
+                    onClick={sendReset}
+                    disabled={resetSending || !email}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#f5d37b] px-4 py-2 text-sm font-black text-black hover:opacity-90 disabled:opacity-60"
+                  >
                     <Icon name="mail" className="h-4 w-4" />
                     {resetSending ? "Илгээж байна..." : "Reset email илгээх"}
                   </button>
@@ -488,7 +537,10 @@ export default function SettingsPage() {
                     onClick={changePassword}
                     disabled={!canChangePassword || pwSaving}
                     className={cn(
-                      "w-full rounded-full bg-white py-2.5 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-60"
+                      "w-full rounded-full border bg-white py-2.5 text-sm font-black text-black transition disabled:opacity-60",
+                      STROKE,
+                      SHADOW_INNER,
+                      SHADOW_HOVER
                     )}
                   >
                     {pwSaving ? "Сольж байна..." : "Нууц үг солих"}
@@ -501,9 +553,9 @@ export default function SettingsPage() {
 
         {/* Preferences */}
         <section className={sectionLine}>
-          <div className="text-xl font-extrabold">Харагдац & Хэл</div>
+          <div className="text-xl font-black text-black">Харагдац & Хэл</div>
 
-          <div className={cn("mt-5 p-6", glassPanel)}>
+          <div className={cn("mt-5", panel)}>
             <div className="grid gap-4 md:grid-cols-3">
               {/* Theme */}
               <SectionCard icon={<Icon name="palette" className="h-5 w-5" />} title="Theme" subtitle="Dark / Light">
@@ -531,14 +583,14 @@ export default function SettingsPage() {
                   <Pill
                     active={lang === "mn"}
                     onClick={() => setLang("mn")}
-                    leftIcon={<span className="text-sm font-extrabold">MN</span>}
+                    leftIcon={<span className="text-sm font-black text-black">MN</span>}
                     title="Монгол"
                     subtitle="mn-MN"
                   />
                   <Pill
                     active={lang === "en"}
                     onClick={() => setLang("en")}
-                    leftIcon={<span className="text-sm font-extrabold">EN</span>}
+                    leftIcon={<span className="text-sm font-black text-black">EN</span>}
                     title="English"
                     subtitle="en-US"
                   />
@@ -551,14 +603,14 @@ export default function SettingsPage() {
                   <Pill
                     active={textSize === "normal"}
                     onClick={() => setTextSize("normal")}
-                    leftIcon={<span className="text-sm font-extrabold">Aa</span>}
+                    leftIcon={<span className="text-sm font-black text-black">Aa</span>}
                     title="Normal"
                     subtitle=" "
                   />
                   <Pill
                     active={textSize === "large"}
                     onClick={() => setTextSize("large")}
-                    leftIcon={<span className="text-sm font-extrabold">AA</span>}
+                    leftIcon={<span className="text-sm font-black text-black">AA</span>}
                     title="Large"
                     subtitle=" "
                   />

@@ -197,33 +197,25 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="w-full">
+    <main className="w-full bg-white">
       <div className="mx-auto flex min-h-[calc(100dvh-80px)] w-full items-center justify-center px-4 py-10">
         <div
           className="
             w-[520px] max-w-[92vw]
             rounded-[24px]
-            border-4 border-sky-500/40
-shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
-            bg-white/[0.04]
-            shadow-[0_20px_80px_rgba(0,0,0,0.55)]
-            backdrop-blur
+        border-4 border-black/40
+            bg-white
             overflow-hidden
+            shadow-[0_0_0_1px_rgba(59,130,246,0.12),0_24px_90px_rgba(0,0,0,0.18)]
           "
         >
           {/* Top */}
-          <div className="px-8 pt-8 pb-6 border-b border-white/10">
-            {/* ✅ Brand хэсгийг цэвэрлэсэн (MASTER AI, платформ, робот байхгүй) */}
+          <div className="px-8 pt-8 pb-6 border-b border-black/10">
             <div className="mx-auto mb-1 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 font-bold">
-                  M
-                </div>
-              </div>
+              <div className="h-10 w-10" />
               <div />
             </div>
 
-            {/* ✅ Зөвхөн НЭВТРЭХ / БҮРТГҮҮЛЭХ */}
             <div className="mt-2 grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -236,11 +228,11 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
                   setConfirmPassword("");
                 }}
                 className={[
-                  "h-11 rounded-xl border px-3 text-sm font-semibold transition",
+                  "h-11 rounded-xl border-2 px-3 text-sm font-semibold transition",
                   loading ? "opacity-60 cursor-not-allowed" : "",
                   mode === "login"
-                    ? "border-white/25 bg-white/10 text-white"
-                    : "border-white/10 bg-white/5 text-white/60 hover:text-white",
+                    ? "border-black bg-white text-black"
+                    : "border-black/40 bg-white text-black/60 hover:text-black",
                 ].join(" ")}
               >
                 НЭВТРЭХ
@@ -257,11 +249,11 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
                   setConfirmPassword("");
                 }}
                 className={[
-                  "h-11 rounded-xl border px-3 text-sm font-semibold transition",
+                  "h-11 rounded-xl border-2 px-3 text-sm font-semibold transition",
                   loading ? "opacity-60 cursor-not-allowed" : "",
                   mode === "register"
-                    ? "border-white/25 bg-white/10 text-white"
-                    : "border-white/10 bg-white/5 text-white/60 hover:text-white",
+                    ? "border-black bg-white text-black"
+                    : "border-black/40 bg-white text-black/60 hover:text-black",
                 ].join(" ")}
               >
                 БҮРТГҮҮЛЭХ
@@ -274,7 +266,7 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
             <form onSubmit={onSubmit} className="space-y-4">
               {/* Email */}
               <div>
-                <label className="mb-2 block text-xs text-white/60">И-мэйл хаяг</label>
+                <label className="mb-2 block text-xs text-black/60">И-мэйл хаяг</label>
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -282,19 +274,19 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
                   autoComplete="email"
                   className="
                     w-full h-12 rounded-xl
-                    border border-white/10
-                    bg-white/5
+                    border border-black/15
+                    bg-white
                     px-4
-                    text-sm text-white
+                    text-sm text-black
                     outline-none transition
-                    focus:border-white/20 focus:bg-white/10
+                    focus:border-black/30
                   "
                 />
               </div>
 
               {/* Password */}
               <div>
-                <label className="mb-2 block text-xs text-white/60">Нууц үг</label>
+                <label className="mb-2 block text-xs text-black/60">Нууц үг</label>
                 <input
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -302,21 +294,20 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
                   autoComplete={mode === "login" ? "current-password" : "new-password"}
                   className="
                     w-full h-12 rounded-xl
-                    border border-white/10
-                    bg-white/5
+                    border border-black/15
+                    bg-white
                     px-4
-                    text-sm text-white
+                    text-sm text-black
                     outline-none transition
-                    focus:border-white/20 focus:bg-white/10
+                    focus:border-black/30
                   "
                 />
 
-                {/* Login үед л reset link үлдээнэ */}
                 {mode === "login" && (
                   <div className="mt-3 text-xs">
                     <Link
                       href={`/reset-password${callbackQS}`}
-                      className="text-white/55 hover:text-white"
+                      className="text-black/55 hover:text-black"
                     >
                       Нууц үг сэргээх
                     </Link>
@@ -327,7 +318,7 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
               {/* Confirm password (REGISTER ONLY) */}
               {mode === "register" && (
                 <div>
-                  <label className="mb-2 block text-xs text-white/60">Нууц үг давтах</label>
+                  <label className="mb-2 block text-xs text-black/60">Нууц үг давтах</label>
                   <input
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
@@ -335,12 +326,12 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
                     autoComplete="new-password"
                     className="
                       w-full h-12 rounded-xl
-                      border border-white/10
-                      bg-white/5
+                      border border-black/15
+                      bg-white
                       px-4
-                      text-sm text-white
+                      text-sm text-black
                       outline-none transition
-                      focus:border-white/20 focus:bg-white/10
+                      focus:border-black/30
                     "
                   />
                 </div>
@@ -348,17 +339,17 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
 
               {/* Error / Success */}
               {err && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700">
                   {err}
                 </div>
               )}
               {ok && (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">
                   {ok}
                 </div>
               )}
 
-              {/* Verify resend (логик хэвээр) */}
+              {/* Verify resend */}
               {needsVerify && (
                 <button
                   type="button"
@@ -366,9 +357,9 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
                   onClick={resendVerification}
                   className="
                     w-full h-12 rounded-xl
-                    border border-white/15 bg-white/5
-                    text-sm font-semibold text-white
-                    hover:bg-white/10
+                    border border-black/15 bg-white
+                    text-sm font-semibold text-black
+                    hover:bg-black/[0.03]
                     disabled:opacity-60
                   "
                 >
@@ -382,7 +373,7 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
                 className="
                   w-full h-12 rounded-xl
                   bg-gradient-to-r from-sky-500 to-blue-600
-                  text-white text-sm font-bold tracking-wide
+                  text-black text-sm font-bold tracking-wide
                   shadow-[0_14px_60px_rgba(0,120,255,0.25)]
                   hover:brightness-110
                   disabled:opacity-60
@@ -396,8 +387,8 @@ shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_20px_80px_rgba(0,120,255,0.15)]
 
           {/* Footer */}
           <div className="px-8 pb-7">
-            <div className="h-px w-full bg-white/10 mb-4" />
-            <p className="mx-auto max-w-[360px] text-center text-[11px] leading-snug text-white/40">
+            <div className="h-px w-full bg-black/10 mb-4" />
+            <p className="mx-auto max-w-[360px] text-center text-[11px] leading-snug text-black/45">
               Онлайн хичээл • ebacreator платформ
             </p>
           </div>

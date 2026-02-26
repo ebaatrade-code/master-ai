@@ -248,28 +248,28 @@ export default function AnalistClient() {
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">ANALIST</h1>
-          <p className="mt-1 text-sm text-white/70">Admin-only dashboard</p>
+          <p className="mt-1 text-sm text-black/70">Admin-only dashboard</p>
         </div>
-        <div className="rounded-full bg-white/10 px-3 py-2 text-xs text-white/70">{user.email}</div>
+        <div className="rounded-full bg-white/10 px-3 py-2 text-xs text-black/70">{user.email}</div>
       </div>
 
       {/* KPI */}
       <section className="mt-6 grid gap-4 md:grid-cols-4">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-sm text-white/70">Нийт хэрэглэгч</div>
+        <div className="rounded-2xl border border-black/10 bg-white/5 p-5">
+          <div className="text-sm text-black/70">Нийт хэрэглэгч</div>
           <div className="mt-2 text-3xl font-semibold">{usersCount}</div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-sm text-white/70">Нийт курс</div>
+        <div className="rounded-2xl border border-black/10 bg-white/5 p-5">
+          <div className="text-sm text-black/70">Нийт курс</div>
           <div className="mt-2 text-3xl font-semibold">{coursesCount}</div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-sm text-white/70">Нийт орлого</div>
+        <div className="rounded-2xl border border-black/10 bg-white/5 p-5">
+          <div className="text-sm text-black/70">Нийт орлого</div>
           <div className="mt-2 text-3xl font-semibold">{totalRevenue.toLocaleString()}₮</div>
-          <div className="mt-1 text-xs text-white/50">purchases байвал real / байхгүй бол fallback</div>
+          <div className="mt-1 text-xs text-black/50">purchases байвал real / байхгүй бол fallback</div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-sm text-white/70">Free views (7 / 30)</div>
+        <div className="rounded-2xl border border-black/10 bg-white/5 p-5">
+          <div className="text-sm text-black/70">Free views (7 / 30)</div>
           <div className="mt-2 text-3xl font-semibold">
             {freeViews7} / {freeViews30}
           </div>
@@ -278,7 +278,7 @@ export default function AnalistClient() {
 
       {/* Charts */}
       <section className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+        <div className="rounded-2xl border border-black/10 bg-white/5 p-5">
           <div className="text-sm font-medium">Сүүлийн 7 хоног — Орлого (₮)</div>
           <div className="mt-3 flex items-end gap-1 h-28">
             {Object.entries(rev7).map(([k, v]) => (
@@ -291,10 +291,10 @@ export default function AnalistClient() {
               </div>
             ))}
           </div>
-          <div className="mt-2 text-xs text-white/50">purchases.createdAt дээр суурилна</div>
+          <div className="mt-2 text-xs text-black/50">purchases.createdAt дээр суурилна</div>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+        <div className="rounded-2xl border border-black/10 bg-white/5 p-5">
           <div className="text-sm font-medium">Сүүлийн 30 хоног — Орлого (₮)</div>
           <div className="mt-3 flex items-end gap-1 h-28">
             {Object.entries(rev30).map(([k, v]) => (
@@ -307,16 +307,16 @@ export default function AnalistClient() {
               </div>
             ))}
           </div>
-          <div className="mt-2 text-xs text-white/50">purchases.createdAt дээр суурилна</div>
+          <div className="mt-2 text-xs text-black/50">purchases.createdAt дээр суурилна</div>
         </div>
       </section>
 
       {/* Full table */}
-      <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+      <section className="mt-6 rounded-2xl border border-black/10 bg-white/5 p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-sm font-medium">Бүгдийг харах — Курсийн орлого</div>
-            <div className="mt-1 text-xs text-white/60">Нэр + зарагдсан + нийт орлого</div>
+            <div className="mt-1 text-xs text-black/60">Нэр + зарагдсан + нийт орлого</div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -324,7 +324,7 @@ export default function AnalistClient() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search курс..."
-              className="h-9 w-56 rounded-full border border-white/10 bg-black/30 px-4 text-sm outline-none placeholder:text-white/40"
+              className="h-9 w-56 rounded-full border border-black/10 bg-black/30 px-4 text-sm outline-none placeholder:text-black/40"
             />
             <button
               onClick={() => router.push("/admin")}
@@ -335,21 +335,21 @@ export default function AnalistClient() {
           </div>
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-xl border border-white/10">
-          <div className="grid grid-cols-12 bg-black/30 px-4 py-2 text-xs text-white/60">
+        <div className="mt-4 overflow-hidden rounded-xl border border-black/10">
+          <div className="grid grid-cols-12 bg-black/30 px-4 py-2 text-xs text-black/60">
             <div className="col-span-6">Курс</div>
             <div className="col-span-2 text-right">Зарагдсан</div>
             <div className="col-span-4 text-right">Нийт орлого (₮)</div>
           </div>
 
           {sliced.length === 0 ? (
-            <div className="px-4 py-6 text-sm text-white/60">Илэрц олдсонгүй.</div>
+            <div className="px-4 py-6 text-sm text-black/60">Илэрц олдсонгүй.</div>
           ) : (
             sliced.map((r) => (
               <div key={r.courseId} className="grid grid-cols-12 items-center px-4 py-3 text-sm border-t border-white/10">
                 <div className="col-span-6">
                   <div className="font-medium">{r.title}</div>
-                  <div className="text-xs text-white/50">{r.courseId}</div>
+                  <div className="text-xs text-black/50">{r.courseId}</div>
                 </div>
                 <div className="col-span-2 text-right font-semibold">{r.soldCount}</div>
                 <div className="col-span-4 text-right font-semibold">
@@ -362,7 +362,7 @@ export default function AnalistClient() {
 
         {/* Pagination */}
         <div className="mt-4 flex items-center justify-between">
-          <div className="text-xs text-white/50">
+          <div className="text-xs text-black/50">
             Нийт: {filtered.length} • Page {pageSafe}/{pageCount}
           </div>
 

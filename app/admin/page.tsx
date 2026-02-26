@@ -9,6 +9,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc, // ✅ NEW
   getDocs,
   orderBy,
   query,
@@ -41,6 +42,11 @@ type Course = {
   isPublished?: boolean;
   createdAt?: any;
   updatedAt?: any;
+
+  // (optional) extra fields (эвдэхгүй)
+  thumbnailPath?: string;
+  publishedAt?: any;
+  notifiedPublishedAt?: any;
 };
 
 type FreeLesson = {
@@ -180,10 +186,45 @@ async function fileTo16x9Blob(
   } catch {}
 
   const blob: Blob = await new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), type, quality);
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+      type,
+      quality
+    );
   });
 
   return blob;
+}
+
+/** =========================
+ * ✅ helper — бүх хэрэглэгчид шинэ COURSE notification явуулах
+ * ========================= */
+async function notifyAllUsersNewCourse(args: { courseId: string; title: string }) {
+  const { courseId, title } = args;
+
+  const usersSnap = await getDocs(collection(db, "users"));
+
+  const writes: Promise<any>[] = [];
+  usersSnap.forEach((u) => {
+    const uid = u.id;
+
+    writes.push(
+      addDoc(collection(db, "users", uid, "notifications"), {
+        type: "course_added",
+        title: "Course хичээл шинээр нэмэгдлээ 🎉",
+        body: `${title} course хичээл нэмэгдлээ.`,
+        courseId,
+        href: `/course/${courseId}#buy`,
+        createdAt: serverTimestamp(),
+        read: false,
+      })
+    );
+  });
+
+  const CHUNK = 300;
+  for (let i = 0; i < writes.length; i += CHUNK) {
+    await Promise.all(writes.slice(i, i + CHUNK));
+  }
 }
 
 export default function AdminPage() {
@@ -349,7 +390,6 @@ export default function AdminPage() {
   const editCourse = (c: Course) => {
     setEditingCourseId(c.id);
 
-    // ✅ duration харуулахдаа хамгийн түрүүнд label -> duration -> fallback
     const durationUi = (c.durationLabel ?? c.duration ?? "30 хоног").trim();
 
     setCourseForm({
@@ -395,7 +435,6 @@ export default function AdminPage() {
     setCourseThumbPct(0);
 
     try {
-      // 1) 16:9 болгож resize
       const thumbBlob = await fileTo16x9Blob(courseThumbFile, {
         width: 1280,
         height: 720,
@@ -403,7 +442,6 @@ export default function AdminPage() {
         type: "image/webp",
       });
 
-      // 2) Нэг тогтмол зам (overwrite)
       const path = `thumbnails/courses/${courseId}/thumb_16x9.webp`;
       const storageRef = ref(storage, path);
 
@@ -429,7 +467,7 @@ export default function AdminPage() {
 
       await updateDoc(doc(db, "courses", courseId), {
         thumbnailUrl: url,
-        thumbnailPath: path, // нэмэлт (эвдэхгүй)
+        thumbnailPath: path,
         updatedAt: serverTimestamp(),
       });
 
@@ -459,13 +497,14 @@ export default function AdminPage() {
       return alert("Old price буруу байна!");
     }
 
-    // ✅ duration -> label + days
     const durationLabel = (courseForm.duration || "").trim();
     const durationDays = parseDurationToDays(durationLabel);
 
     const shortDescription = (courseForm.shortDescription || "").trim();
     const whoFor = linesToList(courseForm.whoForText || "");
     const learn = linesToList(courseForm.learnText || "");
+
+    const nextIsPublished = !!courseForm.isPublished;
 
     setBusyCourses(true);
     try {
@@ -474,7 +513,6 @@ export default function AdminPage() {
         price: priceNum,
         ...(oldPriceNum !== undefined ? { oldPrice: oldPriceNum } : {}),
 
-        // ✅ keep legacy + add new standard fields (эвдэхгүй)
         duration: durationLabel || null,
         durationLabel: durationLabel || null,
         ...(durationDays && durationDays > 0 ? { durationDays } : {}),
@@ -484,30 +522,66 @@ export default function AdminPage() {
         learn: learn.length ? learn : null,
 
         thumbnailUrl: (courseForm.thumbnailUrl || "").trim() || null,
-        isPublished: !!courseForm.isPublished,
+        isPublished: nextIsPublished,
         updatedAt: serverTimestamp(),
       };
 
       Object.keys(payload).forEach((k) => payload[k] == null && delete payload[k]);
 
       if (!editingCourseId) {
-        // CREATE
+        // ✅ CREATE
         const docRef = await addDoc(collection(db, "courses"), {
           ...payload,
           createdAt: serverTimestamp(),
+          ...(nextIsPublished ? { publishedAt: serverTimestamp() } : {}),
         });
 
-        // ✅ Create үед файл сонгосон байвал CREATE дараа 16:9 upload хийнэ
         if (courseThumbFile) {
           await uploadThumbnailForCourse(docRef.id);
+        }
+
+        // ✅ CREATE дээр: зөвхөн нийтэд харагдах бол notification явуулна
+        if (nextIsPublished) {
+          try {
+            await notifyAllUsersNewCourse({ courseId: docRef.id, title });
+            await updateDoc(doc(db, "courses", docRef.id), {
+              notifiedPublishedAt: serverTimestamp(),
+            });
+          } catch (err) {
+            console.error("notifyAllUsersNewCourse failed:", err);
+          }
         }
 
         await loadCourses();
         resetCourseForm();
         alert("OK ✅");
       } else {
-        // UPDATE
-        await updateDoc(doc(db, "courses", editingCourseId), payload);
+        // ✅ UPDATE
+        // 1) өмнөх төлөвийг уншина
+        const refDoc = doc(db, "courses", editingCourseId);
+        const prevSnap = await getDoc(refDoc);
+        const prev = (prevSnap.exists() ? (prevSnap.data() as any) : {}) as any;
+
+        const prevIsPublished = prev?.isPublished === true;
+        const prevNotifiedAt = prev?.notifiedPublishedAt ? true : false;
+
+        // 2) update хийнэ
+        await updateDoc(refDoc, {
+          ...payload,
+          // ✅ анх удаа public болгож байгаа бол publishedAt тавина (эвдэхгүй)
+          ...(prevIsPublished ? {} : nextIsPublished ? { publishedAt: serverTimestamp() } : {}),
+        });
+
+        // 3) Хэрвээ hidden -> published болсон бол notification явуулна
+        //    Мөн давхар 1 удаа л явуулахын тулд notifiedPublishedAt шалгана
+        if (!prevIsPublished && nextIsPublished && !prevNotifiedAt) {
+          try {
+            await notifyAllUsersNewCourse({ courseId: editingCourseId, title });
+            await updateDoc(refDoc, { notifiedPublishedAt: serverTimestamp() });
+          } catch (err) {
+            console.error("notify on publish failed:", err);
+          }
+        }
 
         await loadCourses();
         alert("Updated ✅");
@@ -702,20 +776,20 @@ export default function AdminPage() {
   if (role !== "admin") return null;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
+    <div className="mx-auto max-w-6xl px-6 py-10 text-black">
       <h1 className="text-2xl font-bold">Admin</h1>
 
       {/* ✅ Tabs */}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-white/60">Хэсэг сонгоод ажилла</div>
+        <div className="text-sm text-black/60">Хэсэг сонгоод ажилла</div>
 
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-1">
+        <div className="flex items-center gap-2 rounded-2xl border border-black/10 bg-white/5 p-1">
           <button
             type="button"
             onClick={() => setShowFree(false)}
             className={[
               "rounded-xl px-4 py-2 text-sm transition",
-              !showFree ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10",
+              !showFree ? "bg-white/15 text-black" : "text-black/70 hover:bg-white/10",
             ].join(" ")}
           >
             COURSE КАРТАА ЭНД НЭМНЭ
@@ -726,7 +800,7 @@ export default function AdminPage() {
             onClick={() => setShowFree(true)}
             className={[
               "rounded-xl px-4 py-2 text-sm transition",
-              showFree ? "bg-white/15 text-white" : "text-white/70 hover:bg-white/10",
+              showFree ? "bg-white/15 text-black" : "text-black/70 hover:bg-white/10",
             ].join(" ")}
           >
             ҮНЭГҮЙ ХИЧЭЭЛ НЭМЭХ
@@ -739,14 +813,14 @@ export default function AdminPage() {
          ========================================================= */}
       {!showFree && (
         <>
-          <p className="mt-2 text-sm text-white/60">COURSE КАРТАА ЭНД НЭМНЭ (Auto ID)</p>
+          <p className="mt-2 text-sm text-black/60">COURSE КАРТАА ЭНД НЭМНЭ (Auto ID)</p>
 
           {/* COURSE FORM */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="mb-3 text-sm text-white/60">
+          <div className="mt-6 rounded-2xl border border-black/10 bg-white/5 p-5">
+            <div className="mb-3 text-sm text-black/60">
               {editingCourseId ? (
                 <div>
-                  Edit хийж байна: <span className="text-white/80">{editingCourseId}</span>
+                  Edit хийж байна: <span className="text-black/80">{editingCourseId}</span>
                 </div>
               ) : (
                 <div>Create хийхэд Firestore өөрөө ID үүсгэнэ.</div>
@@ -755,109 +829,97 @@ export default function AdminPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-sm text-white/70">Title</label>
+                <label className="text-sm text-black/70">Title</label>
                 <input
                   value={courseForm.title}
                   onChange={(e) => setCourseForm((p: any) => ({ ...p, title: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-sm text-white/70">Price</label>
+                <label className="text-sm text-black/70">Price</label>
                 <input
                   value={courseForm.price}
                   onChange={(e) => setCourseForm((p: any) => ({ ...p, price: e.target.value }))}
                   placeholder="120000"
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-sm text-white/70">Old price (optional)</label>
+                <label className="text-sm text-black/70">Old price (optional)</label>
                 <input
                   value={courseForm.oldPrice}
                   onChange={(e) => setCourseForm((p: any) => ({ ...p, oldPrice: e.target.value }))}
                   placeholder="250000"
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                 />
               </div>
 
               {/* ✅ NEW: duration */}
               <div>
-                <label className="text-sm text-white/70">Course хугацаа</label>
+                <label className="text-sm text-black/70">Course хугацаа</label>
                 <input
                   value={courseForm.duration}
                   onChange={(e) => setCourseForm((p: any) => ({ ...p, duration: e.target.value }))}
                   placeholder="30 хоног / 1 сар / 3 сар"
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                 />
               </div>
 
               {/* ✅ NEW: shortDescription */}
               <div className="md:col-span-2">
-                <label className="text-sm text-white/70">Course card дээрх богино тайлбар</label>
+                <label className="text-sm text-black/70">Course card дээрх богино тайлбар</label>
                 <input
                   value={courseForm.shortDescription}
                   onChange={(e) => setCourseForm((p: any) => ({ ...p, shortDescription: e.target.value }))}
                   placeholder="Сургалтын 1-2 өгүүлбэртэй товч тайлбар"
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                 />
-                <div className="mt-1 text-xs text-white/45">
+                <div className="mt-1 text-xs text-black/45">
                   (Card дээр 2 мөрөөр харагдана — хэт урт бичих хэрэггүй)
                 </div>
               </div>
 
               {/* ✅ NEW: whoFor */}
               <div className="md:col-span-2">
-                <label className="text-sm text-white/70">Сургалт хэнд тохирох вэ? (мөр бүр нэг)</label>
+                <label className="text-sm text-black/70">Энэ сургалтанд ямар ямар хичээлүүд багтсан бэ?</label>
                 <textarea
                   value={courseForm.whoForText}
                   onChange={(e) => setCourseForm((p: any) => ({ ...p, whoForText: e.target.value }))}
                   rows={4}
                   placeholder={`Жишээ:\nAI ашиглаж орлого олох зорилготой хүмүүс\nВидео/контент хийж сошиалд өсөх хүсэлтэй\nЮунаас эхлэхээ мэдэхгүй байсан ч системтэй сурах хүмүүс`}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                 />
               </div>
 
               {/* ✅ NEW: learn */}
               <div className="md:col-span-2">
-                <label className="text-sm text-white/70">Юу сурах вэ? (мөр бүр нэг)</label>
+                <label className="text-sm text-black/70">Та энэ сургалтыг авсанаар юу сурах вэ?</label>
                 <textarea
                   value={courseForm.learnText}
                   onChange={(e) => setCourseForm((p: any) => ({ ...p, learnText: e.target.value }))}
                   rows={4}
                   placeholder={`Жишээ:\nAI-аар зураг/видео/контент хийх workflow\nTool-уудыг зөв хослуулж ашиглах\nReels/Ads-д тохирсон контент бүтэц`}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                 />
-              </div>
-
-              <div className="flex items-center gap-2 pt-7">
-                <input
-                  id="pubCourse"
-                  type="checkbox"
-                  checked={!!courseForm.isPublished}
-                  onChange={(e) => setCourseForm((p: any) => ({ ...p, isPublished: e.target.checked }))}
-                />
-                <label htmlFor="pubCourse" className="text-sm text-white/70">
-                  isPublished
-                </label>
               </div>
 
               <div className="md:col-span-2">
-                <label className="text-sm text-white/70">Thumbnail URL</label>
+                <label className="text-sm text-black/70">Thumbnail URL</label>
                 <input
                   value={courseForm.thumbnailUrl}
                   onChange={(e) => setCourseForm((p: any) => ({ ...p, thumbnailUrl: e.target.value }))}
                   placeholder="https://... (эсвэл upload хийвэл автоматаар бичигдэнэ)"
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                 />
               </div>
 
               {/* ✅ COURSE THUMB UPLOAD + PREVIEW */}
-              <div className="md:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="text-sm font-semibold text-white/80">Thumbnail upload (Course)</div>
-                <div className="mt-1 text-xs text-white/50">
+              <div className="md:col-span-2 rounded-2xl border border-black/10 bg-black/20 p-4">
+                <div className="text-sm font-semibold text-black/80">Thumbnail upload (Course)</div>
+                <div className="mt-1 text-xs text-black/50">
                   JPG/PNG/WEBP. Upload хийхэд автоматаар 16:9 (1280x720) болгож хадгална.
                 </div>
 
@@ -882,8 +944,8 @@ export default function AdminPage() {
 
                 {/* preview */}
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                    <div className="text-xs text-white/60 mb-2">Preview</div>
+                  <div className="rounded-xl border border-black/10 bg-black/30 p-3">
+                    <div className="text-xs text-black/60 mb-2">Preview</div>
                     {courseThumbPreview ? (
                       <img
                         src={courseThumbPreview}
@@ -897,17 +959,56 @@ export default function AdminPage() {
                         className="aspect-video w-full rounded-lg object-cover"
                       />
                     ) : (
-                      <div className="text-xs text-white/50">Thumbnail байхгүй</div>
+                      <div className="text-xs text-black/50">Thumbnail байхгүй</div>
                     )}
                   </div>
 
-                  <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                    <div className="text-xs text-white/60 mb-2">Хадгалагдсан URL</div>
-                    <div className="text-xs break-all text-white/70">{courseForm.thumbnailUrl || "—"}</div>
+                  <div className="rounded-xl border border-black/10 bg-black/30 p-3">
+                    <div className="text-xs text-black/60 mb-2">Хадгалагдсан URL</div>
+                    <div className="text-xs break-all text-black/70">{courseForm.thumbnailUrl || "—"}</div>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* ✅ Publish selector (НИЙТЭД ХАРАГДАХ / ХАРАГДАХГҮЙ) */}
+<div className="md:col-span-2 mt-2 rounded-2xl border border-black/10 bg-white/5 p-4">
+  <div className="text-sm font-semibold text-black/80">Нийтэд харагдах тохиргоо</div>
+
+  <div className="mt-3 flex flex-wrap gap-2">
+    <button
+      type="button"
+      onClick={() => setCourseForm((p: any) => ({ ...p, isPublished: true }))}
+      className={[
+        "rounded-full px-4 py-2 text-sm font-extrabold ring-1 transition",
+        courseForm.isPublished
+          ? "bg-emerald-50 text-emerald-700 ring-emerald-300/70"
+          : "bg-white text-black ring-black/15 hover:bg-black/[0.04]",
+      ].join(" ")}
+    >
+      Нийтэд харагдах
+    </button>
+
+    <button
+      type="button"
+      onClick={() => setCourseForm((p: any) => ({ ...p, isPublished: false }))}
+      className={[
+        "rounded-full px-4 py-2 text-sm font-extrabold ring-1 transition",
+        !courseForm.isPublished
+          ? "bg-amber-50 text-amber-700 ring-amber-300/70"
+          : "bg-white text-black ring-black/15 hover:bg-black/[0.04]",
+      ].join(" ")}
+    >
+      Нийтэд харагдахгүй
+    </button>
+  </div>
+
+  <div className="mt-2 text-xs text-black/55">
+    • Нийтэд харагдах = бүх хэрэглэгчдэд харагдана + notification явна
+    <br />
+    • Нийтэд харагдахгүй = зөвхөн админд харагдана + notification явахгүй
+  </div>
+</div>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -941,32 +1042,32 @@ export default function AdminPage() {
               </button>
             </div>
 
-            {busyCourses && <div className="text-sm text-white/60">Ажиллаж байна...</div>}
+            {busyCourses && <div className="text-sm text-black/60">Ажиллаж байна...</div>}
 
             <div className="grid gap-3">
               {courses.map((c) => (
                 <div
                   key={c.id}
-                  className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center md:justify-between"
+                  className="flex flex-col gap-2 rounded-2xl border border-black/10 bg-white/5 p-4 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="min-w-0">
                     <div className="font-semibold break-all">
                       {c.title}
-                      {!c.isPublished && <span className="ml-2 text-xs text-white/50">(hidden)</span>}
+                      {!c.isPublished && <span className="ml-2 text-xs text-black/50">(hidden)</span>}
                     </div>
 
-                    <div className="mt-1 text-xs text-white/40 break-all">id: {c.id}</div>
+                    <div className="mt-1 text-xs text-black/40 break-all">id: {c.id}</div>
 
-                    <div className="mt-1 text-sm text-white/70">
+                    <div className="mt-1 text-sm text-black/70">
                       {c.price}₮{" "}
-                      {c.oldPrice ? <span className="line-through text-white/40">{c.oldPrice}₮</span> : null}
-                      {(c.durationLabel || c.duration) ? (
-                        <span className="ml-2 text-white/50">• {(c.durationLabel || c.duration) as any}</span>
+                      {c.oldPrice ? <span className="line-through text-black/40">{c.oldPrice}₮</span> : null}
+                      {c.durationLabel || c.duration ? (
+                        <span className="ml-2 text-black/50">• {(c.durationLabel || c.duration) as any}</span>
                       ) : null}
                     </div>
 
                     {c.shortDescription ? (
-                      <div className="mt-2 text-sm text-white/60">{c.shortDescription}</div>
+                      <div className="mt-2 text-sm text-black/60">{c.shortDescription}</div>
                     ) : null}
 
                     {c.thumbnailUrl ? (
@@ -974,7 +1075,7 @@ export default function AdminPage() {
                         <img
                           src={c.thumbnailUrl}
                           alt="thumb"
-                          className="aspect-video w-full rounded-xl border border-white/10 object-cover"
+                          className="aspect-video w-full rounded-xl border border-black/10 object-cover"
                         />
                       </div>
                     ) : null}
@@ -1007,7 +1108,7 @@ export default function AdminPage() {
               ))}
 
               {courses.length === 0 && !busyCourses && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/70">
+                <div className="rounded-2xl border border-black/10 bg-white/5 p-6 text-black/70">
                   Одоогоор course алга.
                 </div>
               )}
@@ -1021,16 +1122,15 @@ export default function AdminPage() {
          ========================================================= */}
       {showFree && (
         <>
-          <p className="mt-2 text-sm text-white/60">
+          <p className="mt-2 text-sm text-black/60">
             ҮНЭГҮЙ ХИЧЭЭЛ НЭМЭХ (Home дээр “ҮНЭГҮЙ ХИЧЭЭЛҮҮД” хэсэгт шууд гарна)
           </p>
 
-          {/* (Доорх free section чинь өөрчлөгдөөгүй — яг чинийхээрээ үлдсэн) */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="mb-3 text-sm text-white/60">
+          <div className="mt-6 rounded-2xl border border-black/10 bg-white/5 p-5">
+            <div className="mb-3 text-sm text-black/60">
               {editingFreeId ? (
                 <div>
-                  Edit хийж байна: <span className="text-white/80">{editingFreeId}</span>
+                  Edit хийж байна: <span className="text-black/80">{editingFreeId}</span>
                 </div>
               ) : (
                 <div>Эхлээд Create (Free) хийгээд ID үүсгэнэ. Дараа нь Thumbnail + MP4 upload хийнэ.</div>
@@ -1039,28 +1139,28 @@ export default function AdminPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className="text-sm text-white/70">Title</label>
+                <label className="text-sm text-black/70">Title</label>
                 <input
                   value={freeForm.title}
                   onChange={(e) => setFreeForm((p: any) => ({ ...p, title: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                   placeholder="Үнэгүй хичээл — Танилцуулга"
                 />
               </div>
 
               <div className="md:col-span-2">
-                <label className="text-sm text-white/70">Thumbnail URL</label>
+                <label className="text-sm text-black/70">Thumbnail URL</label>
                 <input
                   value={freeForm.thumbnailUrl}
                   onChange={(e) => setFreeForm((p: any) => ({ ...p, thumbnailUrl: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                   placeholder="https://... (эсвэл upload хийвэл автоматаар бичигдэнэ)"
                 />
               </div>
 
-              <div className="md:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="text-sm font-semibold text-white/80">Thumbnail (Зураг Upload)</div>
-                <div className="mt-1 text-xs text-white/50">
+              <div className="md:col-span-2 rounded-2xl border border-black/10 bg-black/20 p-4">
+                <div className="text-sm font-semibold text-black/80">Thumbnail (Зураг Upload)</div>
+                <div className="mt-1 text-xs text-black/50">
                   JPG/PNG/WEBP. Upload хийвэл Firestore-ийн thumbnailUrl автоматаар шинэчлэгдэнэ.
                 </div>
 
@@ -1083,8 +1183,8 @@ export default function AdminPage() {
                 </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                    <div className="text-xs text-white/60 mb-2">Preview</div>
+                  <div className="rounded-xl border border-black/10 bg-black/30 p-3">
+                    <div className="text-xs text-black/60 mb-2">Preview</div>
                     {freeThumbPreview ? (
                       <img
                         src={freeThumbPreview}
@@ -1098,23 +1198,23 @@ export default function AdminPage() {
                         className="aspect-video w-full rounded-lg object-cover"
                       />
                     ) : (
-                      <div className="text-xs text-white/50">Thumbnail байхгүй</div>
+                      <div className="text-xs text-black/50">Thumbnail байхгүй</div>
                     )}
                   </div>
 
-                  <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                    <div className="text-xs text-white/60 mb-2">Хадгалагдсан URL</div>
-                    <div className="text-xs break-all text-white/70">{freeForm.thumbnailUrl || "—"}</div>
+                  <div className="rounded-xl border border-black/10 bg-black/30 p-3">
+                    <div className="text-xs text-black/60 mb-2">Хадгалагдсан URL</div>
+                    <div className="text-xs break-all text-black/70">{freeForm.thumbnailUrl || "—"}</div>
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="text-sm text-white/70">Order</label>
+                <label className="text-sm text-black/70">Order</label>
                 <input
                   value={freeForm.order}
                   onChange={(e) => setFreeForm((p: any) => ({ ...p, order: e.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 outline-none"
+                  className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 outline-none"
                   placeholder="1"
                 />
               </div>
@@ -1126,14 +1226,14 @@ export default function AdminPage() {
                   checked={!!freeForm.isPublished}
                   onChange={(e) => setFreeForm((p: any) => ({ ...p, isPublished: e.target.checked }))}
                 />
-                <label htmlFor="pubFree" className="text-sm text-white/70">
+                <label htmlFor="pubFree" className="text-sm text-black/70">
                   isPublished
                 </label>
               </div>
 
-              <div className="md:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="text-sm font-semibold text-white/80">Video (MP4 Upload)</div>
-                <div className="mt-1 text-xs text-white/50">
+              <div className="md:col-span-2 rounded-2xl border border-black/10 bg-black/20 p-4">
+                <div className="text-sm font-semibold text-black/80">Video (MP4 Upload)</div>
+                <div className="mt-1 text-xs text-black/50">
                   Upload хийсний дараа StoragePath + videoUrl автоматаар бичигдэнэ.
                 </div>
 
@@ -1157,20 +1257,20 @@ export default function AdminPage() {
 
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div>
-                    <label className="text-xs text-white/60">StoragePath (auto)</label>
+                    <label className="text-xs text-black/60">StoragePath (auto)</label>
                     <input
                       value={freeForm.storagePath}
                       readOnly
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs outline-none"
+                      className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 text-xs outline-none"
                       placeholder="videos/freeLessons/<id>/<timestamp>.mp4"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-white/60">VideoUrl (auto)</label>
+                    <label className="text-xs text-black/60">VideoUrl (auto)</label>
                     <input
                       value={freeForm.videoUrl}
                       readOnly
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs outline-none"
+                      className="mt-1 w-full rounded-xl border border-black/10 bg-black/40 px-3 py-2 text-xs outline-none"
                       placeholder="https://firebasestorage.googleapis.com/..."
                     />
                   </div>
@@ -1210,34 +1310,38 @@ export default function AdminPage() {
               <h2 className="text-lg font-semibold">Free lessons</h2>
             </div>
 
-            {busyFree && <div className="text-sm text-white/60">Ажиллаж байна...</div>}
+            {busyFree && <div className="text-sm text-black/60">Ажиллаж байна...</div>}
 
             <div className="grid gap-3">
               {freeLessons.map((v) => (
                 <div
                   key={v.id}
-                  className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center md:justify-between"
+                  className="flex flex-col gap-2 rounded-2xl border border-black/10 bg-white/5 p-4 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="min-w-0">
                     <div className="font-semibold break-all">
                       {v.order ?? 0}. {v.title}
-                      {!v.isPublished && <span className="ml-2 text-xs text-white/50">(hidden)</span>}
+                      {!v.isPublished && <span className="ml-2 text-xs text-black/50">(hidden)</span>}
                     </div>
 
-                    <div className="mt-1 text-xs text-white/40 break-all">id: {v.id}</div>
+                    <div className="mt-1 text-xs text-black/40 break-all">id: {v.id}</div>
 
                     {v.thumbnailUrl ? (
                       <div className="mt-3 max-w-[360px]">
                         <img
                           src={v.thumbnailUrl}
                           alt="thumb"
-                          className="aspect-video w-full rounded-xl border border-white/10 object-cover"
+                          className="aspect-video w-full rounded-xl border border-black/10 object-cover"
                         />
                       </div>
                     ) : null}
 
-                    <div className="mt-2 text-xs text-white/60 break-all">
-                      {v.videoUrl ? <span>videoUrl: {v.videoUrl}</span> : <span className="text-white/50">video байхгүй</span>}
+                    <div className="mt-2 text-xs text-black/60 break-all">
+                      {v.videoUrl ? (
+                        <span>videoUrl: {v.videoUrl}</span>
+                      ) : (
+                        <span className="text-black/50">video байхгүй</span>
+                      )}
                     </div>
 
                     {v.videoUrl ? (
@@ -1272,7 +1376,7 @@ export default function AdminPage() {
               ))}
 
               {freeLessons.length === 0 && !busyFree && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/70">
+                <div className="rounded-2xl border border-black/10 bg-white/5 p-6 text-black/70">
                   Одоогоор free lesson алга.
                 </div>
               )}

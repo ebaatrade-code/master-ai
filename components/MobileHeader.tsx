@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+// ✅ Firestore unread count
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { db, auth } from "@/lib/firebase";
 
 type Props = {
   isAuthed: boolean;
@@ -14,6 +18,36 @@ function cn(...xs: Array<string | false | undefined | null>) {
   return xs.filter(Boolean).join(" ");
 }
 
+/* =========================
+   Unread Badge (Facebook-like)
+========================= */
+function UnreadBadge({
+  count,
+  className,
+}: {
+  count: number;
+  className?: string;
+}) {
+  if (!count || count <= 0) return null;
+
+  const label = count > 99 ? "99+" : String(count);
+
+  return (
+    <span
+      className={cn(
+        "absolute -top-1.5 -right-1.5",
+        "inline-flex min-w-[22px] h-[22px] items-center justify-center",
+        "rounded-full bg-red-500 text-white text-[11px] font-black",
+        "px-1.5 shadow-[0_4px_12px_rgba(239,68,68,0.6)]",
+        "ring-2 ring-white",
+        className
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
 export default function MobileHeader({
   isAuthed,
   loadingAuth,
@@ -23,6 +57,9 @@ export default function MobileHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+
+  // ✅ unread notifications count (mobile)
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 6);
@@ -46,6 +83,47 @@ export default function MobileHeader({
     setMenuOpen(false);
     setProfileOpen(false);
   };
+
+  // ✅ realtime unread count (only when authed)
+  useEffect(() => {
+    if (!isAuthed) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const q = query(
+      collection(db, "users", uid, "notifications"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        let c = 0;
+        snap.forEach((d) => {
+          const data: any = d.data();
+          const isUnread = !data?.readAt && data?.read !== true;
+          if (isUnread) c += 1;
+        });
+        setUnreadCount(c);
+      },
+      () => setUnreadCount(0)
+    );
+
+    return () => unsub();
+  }, [isAuthed]);
+
+  // ✅ label (optional)
+  const notiLabel = useMemo(() => {
+    if (unreadCount <= 0) return "Шинэ мэдэгдэл";
+    return "Шинэ мэдэгдэл";
+  }, [unreadCount]);
 
   return (
     <>
@@ -80,15 +158,17 @@ export default function MobileHeader({
             EBACREATOR
           </Link>
 
-          {/* Right: profile */}
+          {/* Right: profile + ✅ unread badge */}
           <button
             onClick={() => {
               setMenuOpen(false);
               setProfileOpen(true);
             }}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5"
             aria-label="Open profile"
           >
+            {/* ✅ show unread count even without opening profile */}
+            {isAuthed && <UnreadBadge count={unreadCount} />}
             <UserIcon />
           </button>
         </div>
@@ -116,7 +196,7 @@ export default function MobileHeader({
             />
           )}
 
-          {/* ✅ NEW: Худалдан авалтын түүх (MENU дээр 2-ын доор) */}
+          {/* ✅ Худалдан авалтын түүх */}
           {isAuthed ? (
             <DrawerLink
               href="/profile/purchases"
@@ -128,7 +208,7 @@ export default function MobileHeader({
               label="Худалдан авалтын түүх"
               onClick={() => {
                 closeAll();
-                onLogin(); // нэвтрээгүй бол login руу явуулна
+                onLogin();
               }}
             />
           )}
@@ -151,12 +231,27 @@ export default function MobileHeader({
                 <span className="text-black/40 text-lg leading-none">›</span>
               </Link>
 
+              {/* ✅ Шинэ мэдэгдэл (profile drawer дээр харагдана + badge) */}
+              <DrawerLinkWithBadge
+                href="/notifications"
+                label={notiLabel}
+                badge={unreadCount}
+                onGo={closeAll}
+              />
+
+              {/* ✅ NEW: “АСУУДАЛ ШИЙДҮҮЛЭХ” — Шинэ мэдэгдэлийн яг доор */}
+              <DrawerLink
+                href="/request?source=mobile_profile"
+                label="Асуудал шийдүүлэх"
+                onGo={closeAll}
+              />
+
               <button
                 onClick={() => {
                   onLogout?.();
                   closeAll();
                 }}
-                className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white"
+                className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black ring-1 ring-blue-400/30 active:scale-[0.99] md:bg-black md:text-white md:ring-white/10"
               >
                 Гарах
               </button>
@@ -173,7 +268,7 @@ export default function MobileHeader({
                   onLogin();
                   closeAll();
                 }}
-                className="mt-4 w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white"
+                className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black ring-1 ring-blue-400/30 active:scale-[0.99] md:bg-black md:text-white md:ring-white/10"
               >
                 Нэвтрэх
               </button>
@@ -208,6 +303,47 @@ function DrawerLink({
       "
     >
       <span>{label}</span>
+      <span className="text-black/40 text-lg leading-none">›</span>
+    </Link>
+  );
+}
+
+/* ✅ Link + badge row (mobile drawers) */
+function DrawerLinkWithBadge({
+  href,
+  label,
+  badge,
+  onGo,
+}: {
+  href: string;
+  label: string;
+  badge: number;
+  onGo: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onGo}
+      className="
+        flex items-center justify-between
+        rounded-xl border border-black/10 bg-black/[0.03]
+        px-4 py-3
+        text-[15px] font-extrabold text-black
+        hover:bg-black/[0.05]
+        active:scale-[0.99]
+      "
+    >
+      <span className="inline-flex items-center gap-2">
+        {label}
+        {badge > 0 ? (
+          <span className="relative inline-flex">
+            <UnreadBadge
+              count={badge}
+              className="!static !min-w-[22px] !h-[22px] !ring-0 !shadow-none"
+            />
+          </span>
+        ) : null}
+      </span>
       <span className="text-black/40 text-lg leading-none">›</span>
     </Link>
   );

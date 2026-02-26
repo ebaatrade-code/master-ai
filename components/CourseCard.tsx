@@ -42,13 +42,14 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
   const wrapProps = href ? { href } : {};
 
   // ✅ MOBILE: white card + black text
-  // ✅ DESKTOP (md+): original dark premium card
+  // ✅ DESKTOP (md+): remove gray/dark background (transparent)
   const cardBase =
     "group block relative overflow-hidden rounded-3xl " +
     "bg-white border-2 border-black/10 " +
     "transition-all duration-300 ease-out transform-gpu will-change-transform " +
     "hover:scale-[1.04] hover:-translate-y-2 " +
-    "md:bg-black/35 md:backdrop-blur md:border-2";
+    // 🔥 гол засвар: md дээр саарал/хар panel байхгүй болгох
+    "md:bg-transparent md:border-2 md:backdrop-blur-0";
 
   const cardPurchased =
     "md:border-orange-400/70 md:shadow-[0_0_18px_rgba(249,115,22,0.18)] " +
@@ -222,7 +223,7 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
                 />
               </>
             ) : (
-              <div className="grid h-full place-items-center text-black/50 md:text-white/40">
+              <div className="grid h-full place-items-center text-black/50 md:text-black/40">
                 <span className="text-sm">Thumbnail байхгүй</span>
               </div>
             )}
@@ -230,34 +231,36 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
         </div>
 
         {/* BODY — ✅ зөвхөн: year, title, price, oldPrice */}
-        <div className="p-5">
+        <div className="p-5 bg-transparent">
           {/* Year */}
-          <div className="text-sm font-semibold text-black/55 md:text-white/55">
+          <div className="text-sm font-semibold text-black/55 md:text-black/55">
             {course.year ?? "2025"}
           </div>
 
           {/* Гарчиг */}
-          <div className="mt-2 text-xl font-black leading-snug text-black/95 line-clamp-2 md:text-white/95">
+          <div className="mt-3 text-xl font-black leading-snug text-black/95 line-clamp-2 md:text-black/95">
             {course.title}
           </div>
 
           {/* Үнэ + Хямдарсан үнэ */}
-          <div className="mt-4 flex items-end gap-3">
+          <div className="mt-10 flex items-end gap-4">
             {priceText ? (
-              <div className="text-2xl font-extrabold text-black md:text-white">
+              // ✅ Одоогийн үнэ = ТОД УЛААН
+              <div className="text-2xl font-extrabold text-black-600 md:text-black-600">
                 {priceText}
               </div>
             ) : null}
 
             {course.oldPrice ? (
               <div
+                // ✅ FORCE faint (even if global CSS overrides)
                 className="
                   pb-[2px]
-                  text-base font-extrabold
-                  text-red-600 line-through
-                  drop-shadow-none
-                  md:text-red-400 md:drop-shadow-[0_0_6px_rgba(248,113,113,0.9)]
+                  text-base font-medium line-through
+                  !text-black/40 !drop-shadow-none
+                  md:!text-black/40
                 "
+                style={{ color: "rgba(0,0,0,0.40)" }}
               >
                 {money(Number(course.oldPrice))}₮
               </div>
@@ -267,7 +270,6 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
           {/* ✅ “ХУДАЛДАЖ АВАХ / ХИЧЭЭЛ ҮЗЭХ” хэсгийг бүр мөсөн арилгасан */}
         </div>
       </CardWrap>
-
 
       <QPayDeeplinkModal
         open={bankOpen}

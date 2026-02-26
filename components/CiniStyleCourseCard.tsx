@@ -72,14 +72,14 @@ export default function CiniStyleCourseCard({
               />
             </>
           ) : (
-            <div className="grid h-full place-items-center text-white/40">
+            <div className="grid h-full place-items-center text-black/40">
               <span className="text-sm">Thumbnail байхгүй</span>
             </div>
           )}
         </div>
 
         {durationLabel ? (
-          <div className="absolute left-3 top-3 z-20 rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-semibold text-white/80">
+          <div className="absolute left-3 top-3 z-20 rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-semibold text-black/80">
             {durationLabel}
           </div>
         ) : null}
@@ -87,36 +87,36 @@ export default function CiniStyleCourseCard({
 
       {/* body */}
       <div className="p-4">
-        <div className="line-clamp-1 text-base font-extrabold text-white/90">
+        <div className="line-clamp-1 text-base font-extrabold text-black/90">
           {course.title}
         </div>
 
         {shortDescription ? (
-          <div className="mt-2 line-clamp-2 text-sm leading-6 text-white/70">
+          <div className="mt-2 line-clamp-2 text-sm leading-6 text-black/70">
             {shortDescription}
           </div>
         ) : (
-          <div className="mt-2 text-sm text-white/40">(Товч тайлбар оруулаагүй)</div>
+          <div className="mt-2 text-sm text-black/40">(Товч тайлбар оруулаагүй)</div>
         )}
 
         <div className="mt-4 flex items-end justify-between gap-3">
           {!isPurchased ? (
             <>
               <div>
-                <div className="text-lg font-extrabold text-white">{priceText}</div>
+                <div className="text-lg font-extrabold text-black">{priceText}</div>
                 {course.oldPrice ? (
-                  <div className="text-xs text-white/45 line-through">
+                  <div className="text-xs text-black/45 line-through">
                     {money(Number(course.oldPrice))}₮
                   </div>
                 ) : null}
               </div>
 
-              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
+              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-black/70">
                 🔒 Худалдаж аваагүй
               </div>
             </>
           ) : (
-            <div className="text-sm text-white/70 group-hover:text-white">Дэлгэрэнгүй →</div>
+            <div className="text-sm text-black/70 group-hover:text-black">Дэлгэрэнгүй →</div>
           )}
         </div>
       </div>

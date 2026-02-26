@@ -412,7 +412,7 @@ export default function QPayModal({
                 </div>
 
                 <div className="mt-3 w-full rounded-xl bg-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
-                  Та гүйлгээ хийх банкаа сонгоно уу?
+                  Та дурын банкаа сонгож ороод төлбөрөө төлөх боломжтой.
                 </div>
 
                 {bankUrls.length ? (
@@ -517,13 +517,13 @@ export default function QPayModal({
                 {lastErr ? <div className="mt-3 text-[13px] text-red-600">{lastErr}</div> : null}
 
                 <div className="mt-4">
-                  <button
-                    onClick={onClose}
-                    className="w-full rounded-xl bg-black px-5 py-3 text-[15px] font-semibold text-white hover:bg-black/90"
-                  >
-                    Ок
-                  </button>
-                </div>
+  <button
+    onClick={onClose}
+    className="w-full rounded-xl border border-black bg-white px-5 py-3 text-[15px] font-semibold text-black hover:bg-black/5 active:scale-[0.99] transition-all"
+  >
+    Ок
+  </button>
+</div>
               </div>
 
               <div className="h-2" />

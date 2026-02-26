@@ -1,4 +1,3 @@
-// components/Header.tsx
 "use client";
 
 import Link from "next/link";
@@ -6,34 +5,150 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+// ✅ firestore (unread badge + admin requests badge)
+import {
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+
 function cn(...xs: Array<string | false | undefined | null>) {
   return xs.filter(Boolean).join(" ");
 }
 
 /* =========================
-   Theme helpers (class-based dark mode)
+   Theme helpers (FORCE LIGHT ONLY)
 ========================= */
 type ThemeMode = "dark" | "light";
 
-function applyTheme(mode: ThemeMode) {
+function applyTheme(_mode: ThemeMode) {
   const root = document.documentElement;
-  if (mode === "dark") root.classList.add("dark");
-  else root.classList.remove("dark");
-  localStorage.setItem("theme", mode);
+
+  // ✅ FORCE LIGHT: never allow dark
+  root.classList.remove("dark");
+
+  // ✅ Optional: make native UI (inputs/scrollbars) light
+  try {
+    (root.style as any).colorScheme = "light";
+  } catch {}
+
+  // ✅ keep storage consistent
+  try {
+    localStorage.setItem("theme", "light");
+  } catch {}
 }
 
 function getSavedTheme(): ThemeMode {
-  const v = (typeof window !== "undefined" && localStorage.getItem("theme")) || "";
-  return v === "light" ? "light" : "dark";
+  // ✅ FORCE LIGHT
+  return "light";
 }
 
 type Lang = "MN" | "EN";
 function getSavedLang(): Lang {
-  const v = (typeof window !== "undefined" && localStorage.getItem("lang")) || "";
+  const v =
+    (typeof window !== "undefined" && localStorage.getItem("lang")) || "";
   return v === "EN" ? "EN" : "MN";
 }
 function saveLang(l: Lang) {
   localStorage.setItem("lang", l);
+}
+
+/* =========================
+   ✅ Unread Notifications Count (readAt-based)
+   - schema: users/{uid}/notifications/{id}
+   - unread: !readAt
+========================= */
+function useUnreadNotiCount(uid?: string) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!uid) return;
+
+    const q = query(
+      collection(db, "users", uid, "notifications"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        let c = 0;
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          if (!data?.readAt && data?.read !== true) c += 1;
+        });
+        setCount(c);
+      },
+      () => setCount(0)
+    );
+
+    return () => unsub();
+  }, [uid]);
+
+  return count;
+}
+
+/* =========================
+   ✅ Admin "New Requests" Count (supportRequests OPEN)
+   - schema: supportRequests/{id}
+   - new/open: status == "OPEN"
+========================= */
+function useOpenRequestsCount(enabled: boolean) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!enabled) {
+      setCount(0);
+      return;
+    }
+
+    const q = query(
+      collection(db, "supportRequests"),
+      where("status", "==", "OPEN"),
+      limit(1000)
+    );
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => setCount(snap.size),
+      () => setCount(0)
+    );
+
+    return () => unsub();
+  }, [enabled]);
+
+  return count;
+}
+
+function UnreadBadge({
+  count,
+  className,
+}: {
+  count: number;
+  className?: string;
+}) {
+  if (!count || count <= 0) return null;
+
+  const label = count > 99 ? "99+" : String(count);
+
+  return (
+    <span
+      className={cn(
+        "absolute -top-2 -right-2",
+        "inline-flex min-w-[22px] h-[22px] items-center justify-center",
+        "rounded-full bg-red-500 text-white text-[11px] font-black",
+        "px-1.5 shadow-[0_4px_12px_rgba(239,68,68,0.6)]",
+        "ring-2 ring-white",
+        className
+      )}
+    >
+      {label}
+    </span>
+  );
 }
 
 /* =========================
@@ -55,7 +170,11 @@ function IconUser({ className = "" }: { className?: string }) {
 function IconSettings({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
       <path
         d="M19.4 15a7.94 7.94 0 0 0 .1-1 7.94 7.94 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8.4 8.4 0 0 0-1.7-1L15 3h-6l-.3 3a8.4 8.4 0 0 0-1.7 1l-2.4-1-2 3.5L4.6 12a7.94 7.94 0 0 0-.1 1 7.94 7.94 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8.4 8.4 0 0 0 1.7 1l.3 3h6l.3-3a8.4 8.4 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5Z"
         stroke="currentColor"
@@ -118,19 +237,6 @@ function IconSun({ className = "" }: { className?: string }) {
   );
 }
 
-function IconMoon({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path
-        d="M21 13.5A8.5 8.5 0 0 1 10.5 3 7.5 7.5 0 1 0 21 13.5Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function IconReceipt({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -146,6 +252,25 @@ function IconReceipt({ className = "" }: { className?: string }) {
   );
 }
 
+function IconBell({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 7h18s-3 0-3-7Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M13.73 21a2 2 0 0 1-3.46 0"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function IconHamburger({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -156,24 +281,50 @@ function IconHamburger({ className = "" }: { className?: string }) {
   );
 }
 
+/* ✅ NEW: Support / Help icon */
+function IconHelp({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M9.6 9.2A2.6 2.6 0 1 1 13 12c-.9.5-1.4 1-1.4 2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M12 17.2h.01" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /* =========================
-   Profile Dropdown (desktop)
+   Profile Dropdown (desktop) — WHITE THEME
 ========================= */
 function ProfileDropdown({
+  uid,
   email,
   displayName,
   avatarUrl,
   onLogout,
+  unreadCount,
 }: {
+  uid: string;
   email: string;
   displayName?: string;
   avatarUrl?: string;
   onLogout: () => Promise<void> | void;
+  unreadCount: number;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
-  const [theme, setTheme] = useState<ThemeMode>("dark");
+  // ✅ Light-only (state kept only for UI label)
+  const [theme, setTheme] = useState<ThemeMode>("light");
   const [lang, setLang] = useState<Lang>("MN");
 
   const initials = useMemo(() => {
@@ -185,11 +336,11 @@ function ProfileDropdown({
   }, [displayName, email]);
 
   useEffect(() => {
-    const t = getSavedTheme();
+    const t = getSavedTheme(); // always light
     const l = getSavedLang();
     setTheme(t);
     setLang(l);
-    applyTheme(t);
+    applyTheme(t); // force remove dark
   }, []);
 
   useEffect(() => {
@@ -215,9 +366,9 @@ function ProfileDropdown({
   };
 
   const toggleTheme = () => {
-    const next: ThemeMode = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    applyTheme(next);
+    // ✅ Light-only: do nothing but keep UI stable
+    setTheme("light");
+    applyTheme("light");
   };
 
   const toggleLang = () => {
@@ -226,126 +377,166 @@ function ProfileDropdown({
     saveLang(next);
   };
 
+  // ✅ WHITE dropdown styles
   const iconBox =
-    "grid h-10 w-10 place-items-center rounded-2xl bg-white/5 ring-1 ring-white/12 group-hover:bg-white/10 group-hover:ring-white/25 transition";
+    "grid h-10 w-10 place-items-center rounded-2xl bg-black/[0.03] ring-1 ring-black/10 group-hover:bg-black/[0.06] group-hover:ring-black/20 transition";
   const itemRow =
-    "group flex items-center gap-3 px-4 py-3 text-[15px] font-semibold text-white/90 hover:bg-white/10 transition";
+    "group flex items-center gap-3 px-4 py-3 text-[15px] font-extrabold text-black hover:bg-black/[0.04] transition";
 
   return (
     <div ref={ref} className="relative">
+      {/* PROFILE pill */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex items-center gap-2 rounded-full px-3 py-2 ring-1",
-          "bg-black/5 text-black hover:bg-black/10 ring-black/10",
-          "md:bg-white/10 md:text-white md:hover:bg-white/15 md:ring-white/15"
+          "relative flex items-center gap-2 rounded-full px-3 py-2 ring-1 transition",
+          "bg-white text-black hover:bg-black/[0.04] ring-black/70"
         )}
         aria-haspopup="menu"
         aria-expanded={open}
       >
+        {/* ✅ Profile pill unread badge */}
+        <UnreadBadge count={unreadCount} className="-top-2 -right-2" />
+
         <span
           className={cn(
             "relative h-8 w-8 overflow-hidden rounded-full ring-1",
-            "ring-black/10 bg-black/5",
-            "md:ring-white/15 md:bg-white/10"
+            "ring-black/70 bg-white"
           )}
         >
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
           ) : (
-            <span
-              className={cn(
-                "grid h-full w-full place-items-center text-xs font-extrabold",
-                "text-black/90 md:text-white/95"
-              )}
-            >
+            <span className="grid h-full w-full place-items-center text-xs font-extrabold text-black">
               {initials}
             </span>
           )}
         </span>
 
-        <span className="hidden sm:block max-w-[150px] truncate font-semibold text-black/90 md:text-white/90">
+        <span className="hidden sm:block max-w-[150px] truncate font-extrabold text-black">
           {displayName?.trim() ? displayName : "PROFILE"}
         </span>
       </button>
 
+      {/* Dropdown panel: PURE WHITE */}
       {open && (
         <div
           className={cn(
-            "absolute right-0 mt-3 w-80 overflow-hidden rounded-3xl bg-black",
-            "border border-white/18 ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.75)] z-[999]",
-            "before:absolute before:inset-0 before:pointer-events-none before:bg-gradient-to-b before:from-white/10 before:to-transparent before:opacity-60"
+            "absolute right-0 mt-3 w-80 overflow-hidden rounded-3xl bg-white",
+            "border border-black/15 ring-1 ring-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.25)] z-[999]"
           )}
           role="menu"
         >
-          <div className="relative px-5 pt-5 pb-4 border-b border-white/12">
+          <div className="px-5 pt-5 pb-4 border-b border-black/10">
             <div className="flex items-center gap-4">
-              <span className="relative h-12 w-12 overflow-hidden rounded-3xl bg-white/10 ring-1 ring-white/15">
+              <span className="relative h-12 w-12 overflow-hidden rounded-3xl bg-white ring-1 ring-black/15">
                 {avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="grid h-full w-full place-items-center text-sm font-extrabold text-white">{initials}</span>
+                  <span className="grid h-full w-full place-items-center text-sm font-extrabold text-black">
+                    {initials}
+                  </span>
                 )}
               </span>
 
               <div className="min-w-0">
-                <div className="text-[16px] font-extrabold text-white truncate">
+                <div className="text-[16px] font-extrabold text-black truncate">
                   {displayName?.trim() ? displayName : "Хэрэглэгч"}
                 </div>
-                <div className="text-sm text-white/65 truncate">{email}</div>
+                <div className="text-sm text-black/60 truncate">{email}</div>
               </div>
             </div>
           </div>
 
           <Link href="/profile" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
             <span className={iconBox}>
-              <IconUser className="h-5 w-5 text-white/90" />
+              <IconUser className="h-5 w-5 text-black/90" />
             </span>
             Профайл
           </Link>
 
-          <Link href="/profile/purchases" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
+          <Link
+            href="/profile/purchases"
+            onClick={() => setOpen(false)}
+            className={itemRow}
+            role="menuitem"
+          >
             <span className={iconBox}>
-              <IconReceipt className="h-5 w-5 text-white/90" />
+              <IconReceipt className="h-5 w-5 text-black/90" />
             </span>
             Худалдан авалтын түүх
           </Link>
 
+          {/* ✅ notifications + unread badge */}
+          <Link
+            href="/notifications"
+            onClick={() => setOpen(false)}
+            className={itemRow}
+            role="menuitem"
+          >
+            <span className={cn(iconBox, "relative")}>
+              <IconBell className="h-5 w-5 text-black/90" />
+              <UnreadBadge count={unreadCount} />
+            </span>
+            Шинэ мэдэгдэл
+          </Link>
+
+          {/* ✅ NEW: “АСУУДАЛ ШИЙДҮҮЛЭХ” (Support Request) — placed right under notifications */}
+          <Link
+            href="/request?source=menu"
+            onClick={() => setOpen(false)}
+            className={itemRow}
+            role="menuitem"
+          >
+            <span className={iconBox}>
+              <IconHelp className="h-5 w-5 text-black/90" />
+            </span>
+            Асуудал шийдүүлэх
+          </Link>
+
           <Link href="/settings" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
             <span className={iconBox}>
-              <IconSettings className="h-5 w-5 text-white/90" />
+              <IconSettings className="h-5 w-5 text-black/90" />
             </span>
             Тохиргоо
           </Link>
 
-          <div className="h-px bg-white/12 mx-5 my-1" />
+          <div className="h-px bg-black/10 mx-5 my-1" />
 
-          <button type="button" onClick={handleLogout} className={cn(itemRow, "text-red-200 hover:text-red-100")} role="menuitem">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className={cn(itemRow, "text-red-600 hover:text-red-700")}
+            role="menuitem"
+          >
             <span className={iconBox}>
-              <IconLogout className="h-5 w-5 text-red-200" />
+              <IconLogout className="h-5 w-5 text-red-600" />
             </span>
             Гарах
           </button>
 
-          <div className="relative border-t border-white/12 px-5 py-4">
+          {/* footer controls */}
+          <div className="border-t border-black/10 px-5 py-4">
             <div className="grid gap-2">
               <button
                 type="button"
                 onClick={toggleLang}
                 className={cn(
                   "w-full flex items-center justify-between rounded-2xl px-4 py-3",
-                  "bg-white/6 hover:bg-white/10 transition",
-                  "ring-1 ring-white/12 hover:ring-white/25"
+                  "bg-black/[0.03] hover:bg-black/[0.06] transition",
+                  "ring-1 ring-black/10 hover:ring-black/20"
                 )}
               >
-                <span className="flex items-center gap-3 text-[14px] font-semibold text-white/90">
-                  <IconGlobe className="h-5 w-5 text-white/90" />
+                <span className="flex items-center gap-3 text-[14px] font-extrabold text-black">
+                  <IconGlobe className="h-5 w-5 text-black/90" />
                   Language
                 </span>
-                <span className="text-xs font-extrabold text-white bg-white/12 px-3 py-1.5 rounded-xl">{lang}</span>
+                <span className="text-xs font-extrabold text-black bg-black/[0.06] px-3 py-1.5 rounded-xl">
+                  {lang}
+                </span>
               </button>
 
               <button
@@ -353,21 +544,19 @@ function ProfileDropdown({
                 onClick={toggleTheme}
                 className={cn(
                   "w-full flex items-center justify-between rounded-2xl px-4 py-3",
-                  "bg-white/6 hover:bg-white/10 transition",
-                  "ring-1 ring-white/12 hover:ring-white/25"
+                  "bg-black/[0.03] hover:bg-black/[0.06] transition",
+                  "ring-1 ring-black/10 hover:ring-black/20"
                 )}
               >
-                <span className="flex items-center gap-3 text-[14px] font-semibold text-white/90">
-                  {theme === "dark" ? <IconMoon className="h-5 w-5 text-white/90" /> : <IconSun className="h-5 w-5 text-white/90" />}
+                <span className="flex items-center gap-3 text-[14px] font-extrabold text-black">
+                  <IconSun className="h-5 w-5 text-black/90" />
                   Theme
                 </span>
-                <span className="text-xs font-extrabold text-white bg-white/12 px-3 py-1.5 rounded-xl">
-                  {theme === "dark" ? "Dark" : "Light"}
+                <span className="text-xs font-extrabold text-black bg-black/[0.06] px-3 py-1.5 rounded-xl">
+                  Light
                 </span>
               </button>
             </div>
-
-            <div className="mt-3 text-[11px] text-white/45">* Theme/Language тохиргоо localStorage-д хадгалагдана.</div>
           </div>
         </div>
       )}
@@ -385,6 +574,8 @@ function MobileMenu({
   onLogout,
   goLogin,
   isAdmin,
+  unreadCount,
+  openReqCount,
 }: {
   open: boolean;
   onClose: () => void;
@@ -392,6 +583,8 @@ function MobileMenu({
   onLogout: () => Promise<void> | void;
   goLogin: () => void;
   isAdmin: boolean;
+  unreadCount: number;
+  openReqCount: number;
 }) {
   const router = useRouter();
 
@@ -416,10 +609,12 @@ function MobileMenu({
 
   return (
     <div className="fixed inset-0 z-[9999] md:hidden">
-      {/* overlay */}
-      <button aria-label="Close menu overlay" className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <button
+        aria-label="Close menu overlay"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+      />
 
-      {/* panel */}
       <div className="absolute left-0 top-0 h-full w-[86vw] max-w-[360px] bg-white shadow-2xl">
         <div className="flex items-center justify-between px-4 h-14 border-b border-black/10">
           <div className="text-[13px] tracking-widest text-black/60">MENU</div>
@@ -443,7 +638,6 @@ function MobileMenu({
             <span className={right}>›</span>
           </button>
 
-          {/* ✅ admin menu (mobile) */}
           {isAuthed && isAdmin && (
             <>
               <div className="pt-2 border-t border-black/10" />
@@ -465,13 +659,42 @@ function MobileMenu({
                 <span>Analist</span>
                 <span className={right}>›</span>
               </button>
+
+              <button onClick={() => go("/admin/requests")} className={item}>
+                <span className="relative inline-flex items-center">
+                  Хүсэлтийн түүх
+                  <UnreadBadge
+                    count={openReqCount}
+                    className="!relative !-top-0 !-right-0 ml-2"
+                  />
+                </span>
+                <span className={right}>›</span>
+              </button>
             </>
           )}
 
-          {/* ✅ authenticated items */}
           {isAuthed && (
             <button onClick={() => go("/profile/purchases")} className={item}>
               <span>Худалдан авалтын түүх</span>
+              <span className={right}>›</span>
+            </button>
+          )}
+
+          {/* ✅ mobile notifications + unread badge */}
+          {isAuthed && (
+            <button onClick={() => go("/notifications")} className={item}>
+              <span className="relative inline-flex items-center">
+                Шинэ мэдэгдэл
+                <UnreadBadge count={unreadCount} className="!relative !-top-0 !-right-0 ml-2" />
+              </span>
+              <span className={right}>›</span>
+            </button>
+          )}
+
+          {/* ✅ NEW: “АСУУДАЛ ШИЙДҮҮЛЭХ” under notifications */}
+          {isAuthed && (
+            <button onClick={() => go("/request?source=menu")} className={item}>
+              <span>Асуудал шийдүүлэх</span>
               <span className={right}>›</span>
             </button>
           )}
@@ -544,13 +767,20 @@ export default function Header() {
   };
 
   const isAdmin = role === "admin";
-
-  // ✅ mobile drawer state
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // ✅ Admin dropdown (desktop)
   const [adminOpen, setAdminOpen] = useState(false);
   const adminRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ unread notifications count (realtime)
+  const unreadCount = useUnreadNotiCount(user?.uid);
+
+  // ✅ admin new requests count (realtime)
+  const openReqCount = useOpenRequestsCount(!!user && isAdmin);
+
+  useEffect(() => {
+    applyTheme("light");
+  }, []);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -566,17 +796,10 @@ export default function Header() {
   }, [pathname]);
 
   return (
-    <header
-      className={cn(
-        "sticky top-0 z-50 backdrop-blur",
-        "border-b border-black/10 bg-white text-black",
-        "md:border-white/10 md:bg-black/70 md:text-white"
-      )}
-    >
+    <header className="sticky top-0 z-50 bg-transparent text-black">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        {/* LEFT: mobile hamburger + brand */}
+        {/* LEFT */}
         <div className="flex items-center gap-2">
-          {/* ✅ Mobile hamburger */}
           <button
             className="md:hidden h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
             onClick={() => setMenuOpen(true)}
@@ -586,51 +809,42 @@ export default function Header() {
           </button>
 
           <Link href="/" className="group flex items-center gap-3 select-none">
+            <span className="text-sm font-black tracking-wide text-black">EBACREATOR</span>
             <span
-              className="
-                text-sm font-semibold tracking-wide
-                text-orange-500
-                transition-colors duration-200
-                group-hover:text-orange-400
-                md:text-orange-400 md:group-hover:text-orange-300
-              "
-            >
-              EBACREATOR
-            </span>
-
-            <span
-              className="
-                hidden sm:block
-                h-px w-10
-                bg-black/25
-                transition-colors duration-200
-                group-hover:bg-orange-500/60
-                md:bg-white/30 md:group-hover:bg-orange-400/60
-              "
+              className={cn(
+                "hidden sm:block h-px w-10",
+                "bg-red-500",
+                "shadow-[0_0_10px_rgba(239,68,68,0.95)]"
+              )}
             />
           </Link>
         </div>
 
-        {/* RIGHT: desktop nav */}
+        {/* RIGHT desktop nav */}
         <nav className="hidden md:flex items-center gap-2 text-sm">
-          <Link className="rounded-full px-3 py-2 hover:bg-black/5 md:hover:bg-white/10" href="/contents">
+          <Link
+            className="rounded-full px-3 py-2 font-extrabold text-black hover:bg-black/[0.04]"
+            href="/contents"
+          >
             СУРГАЛТУУД
           </Link>
 
           {!loading && !user ? (
             <button
               onClick={() => router.push(`/login?callbackUrl=${encodeURIComponent("/my-content")}`)}
-              className="rounded-full px-3 py-2 hover:bg-black/5 md:hover:bg-white/10"
+              className="rounded-full px-3 py-2 font-extrabold text-black hover:bg-black/[0.04]"
             >
               МИНИЙ СУРГАЛТУУД
             </button>
           ) : (
-            <Link className="rounded-full px-3 py-2 hover:bg-black/5 md:hover:bg-white/10" href="/my-content">
+            <Link
+              className="rounded-full px-3 py-2 font-extrabold text-black hover:bg-black/[0.04]"
+              href="/my-content"
+            >
               МИНИЙ СУРГАЛТУУД
             </Link>
           )}
 
-          {/* ✅ ADMIN dropdown */}
           {!loading && user && isAdmin && (
             <div ref={adminRef} className="relative">
               <button
@@ -638,14 +852,16 @@ export default function Header() {
                 onClick={() => setAdminOpen((v) => !v)}
                 onMouseEnter={() => setAdminOpen(true)}
                 className={cn(
-                  "rounded-full px-3 py-2 font-semibold",
-                  "hover:bg-black/5 md:hover:bg-white/10",
-                  adminOpen && "bg-black/5 md:bg-white/10"
+                  "relative rounded-full px-3 py-2 font-extrabold text-black",
+                  "hover:bg-black/[0.04]",
+                  adminOpen && "bg-black/[0.04]"
                 )}
                 aria-haspopup="menu"
                 aria-expanded={adminOpen}
               >
-            АДМИН
+                {/* ✅ Admin button badge (new OPEN requests) */}
+                <UnreadBadge count={openReqCount} className="-top-2 -right-2" />
+                АДМИН
               </button>
 
               {adminOpen && (
@@ -653,55 +869,72 @@ export default function Header() {
                   onMouseLeave={() => setAdminOpen(false)}
                   className={cn(
                     "absolute right-0 mt-2 w-52 overflow-hidden rounded-2xl",
-                    "border border-white/15 bg-black/90 text-white shadow-[0_20px_60px_rgba(0,0,0,0.55)]",
-                    "ring-1 ring-white/10 z-[999]"
+                    "bg-white text-black",
+                    "border border-black/15 shadow-[0_20px_60px_rgba(0,0,0,0.25)]",
+                    "ring-1 ring-black/10 z-[999]"
                   )}
                   role="menu"
                 >
                   <Link
                     href="/admin"
                     onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
                     role="menuitem"
                   >
                     ADMIN Home
                   </Link>
-                  <div className="h-px bg-white/10" />
+                  <div className="h-px bg-black/10" />
                   <Link
                     href="/admin/users"
                     onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
                     role="menuitem"
                   >
                     USERS
                   </Link>
                   <Link
-                    href="/admin/BANNER"
+                    href="/admin/banner"
                     onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
                     role="menuitem"
                   >
-                    BANNER
+                    Banner
                   </Link>
                   <Link
                     href="/analist"
                     onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-semibold hover:bg-white/10"
+                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
                     role="menuitem"
                   >
-                ANALIST
+                    ANALIST
+                  </Link>
+
+                  {/* ✅ Admin dropdown: Requests + badge */}
+                  <Link
+                    href="/admin/requests"
+                    onClick={() => setAdminOpen(false)}
+                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
+                    role="menuitem"
+                  >
+                    <span className="relative inline-flex items-center">
+                      Хүсэлтийн түүх
+                      <UnreadBadge
+                        count={openReqCount}
+                        className="!relative !-top-0 !-right-0 ml-2"
+                      />
+                    </span>
                   </Link>
                 </div>
               )}
             </div>
           )}
 
-          {loading && <div className="ml-2 h-9 w-24 rounded-full bg-black/5 animate-pulse md:bg-white/10" />}
+          {loading && <div className="ml-2 h-9 w-24 rounded-full bg-black/5 animate-pulse" />}
 
           {!loading && !user && (
             <button
               onClick={goLogin}
-              className="rounded-full bg-black/5 px-3 py-2 hover:bg-black/10 md:bg-white/10 md:hover:bg-white/15"
+              className="rounded-full bg-white px-3 py-2 font-extrabold text-black ring-1 ring-black/70 hover:bg-black/[0.04]"
             >
               НЭВТРЭХ
             </button>
@@ -710,16 +943,18 @@ export default function Header() {
           {!loading && user && (
             <div className="flex items-center gap-2">
               <ProfileDropdown
+                uid={user.uid}
                 email={user.email || ""}
                 displayName={userDoc?.name || ""}
                 avatarUrl={(userDoc as any)?.avatarUrl || ""}
                 onLogout={onLogout}
+                unreadCount={unreadCount}
               />
             </div>
           )}
         </nav>
 
-        {/* RIGHT: mobile profile icon (optional) */}
+        {/* mobile right */}
         <div className="md:hidden flex items-center gap-2">
           <button
             onClick={() => (user ? router.push("/profile") : goLogin())}
@@ -731,7 +966,6 @@ export default function Header() {
         </div>
       </div>
 
-      {/* ✅ Mobile drawer */}
       <MobileMenu
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
@@ -739,6 +973,8 @@ export default function Header() {
         onLogout={onLogout}
         goLogin={goLogin}
         isAdmin={isAdmin}
+        unreadCount={unreadCount}
+        openReqCount={openReqCount}
       />
     </header>
   );

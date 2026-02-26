@@ -118,13 +118,13 @@ export default function PayContinuePage() {
   }, [inv, invoiceId]);
 
   if (loading) {
-    return <div className="min-h-[calc(100vh-80px)] p-6 text-white/70">Уншиж байна...</div>;
+    return <div className="min-h-[calc(100vh-80px)] p-6 text-black/70">Уншиж байна...</div>;
   }
 
   if (!user) return null;
 
   return (
-    <div className="min-h-[calc(100vh-80px)] text-white">
+    <div className="min-h-[calc(100vh-80px)] text-black">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 pt-8 pb-14">
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="text-lg font-extrabold">Төлбөр үргэлжлүүлэх</div>
@@ -134,18 +134,18 @@ export default function PayContinuePage() {
               {err}
             </div>
           ) : inv ? (
-            <div className="mt-3 text-sm text-white/70">
+            <div className="mt-3 text-sm text-black/70">
               <div>Invoice: #{invoiceId.slice(0, 8).toUpperCase()}</div>
               <div className="mt-1">Огноо: {fmt(inv.createdAt)}</div>
               <div className="mt-1">
-                Төлөв: <span className="text-white/90 font-semibold">{String(inv.status || "—")}</span>
+                Төлөв: <span className="text-black/90 font-semibold">{String(inv.status || "—")}</span>
               </div>
             </div>
           ) : (
-            <div className="mt-3 text-sm text-white/60">Уншиж байна...</div>
+            <div className="mt-3 text-sm text-black/60">Уншиж байна...</div>
           )}
 
-          <div className="mt-4 text-xs text-white/45">
+          <div className="mt-4 text-xs text-black/45">
             Энэ хуудсанд ормогц төлбөрийн цонх автоматаар нээгдэнэ.
           </div>
         </div>
