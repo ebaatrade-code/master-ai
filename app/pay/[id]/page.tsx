@@ -124,9 +124,9 @@ export default function PayContinuePage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-[calc(100vh-80px)] text-black">
+    <div className="min-h-[calc(100vh-80px)] text-white">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 pt-8 pb-14">
-        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+        <div className="rounded-1xl border border-black/10 bg-black/20 p-4">
           <div className="text-lg font-extrabold">Төлбөр үргэлжлүүлэх</div>
 
           {err ? (

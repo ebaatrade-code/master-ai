@@ -57,26 +57,23 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <main className="w-full">
+    <main className="min-h-[100vh] w-full flex items-center justify-center px-4">
       <div
         className="
-          mx-auto
           w-[440px] max-w-[92vw]
-          h-[580px] max-h-[86vh]
           rounded-2xl
-          border border-white/10
-          bg-white/[0.04]
-          shadow-[0_20px_80px_rgba(0,0,0,0.55)]
-          backdrop-blur
+          border border-black/10
+          bg-white
+          shadow-[0_20px_80px_rgba(0,0,0,0.18)]
           overflow-hidden
         "
       >
-        <div className="px-8 pt-8 pb-5 border-b border-white/10">
-          <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-xl bg-white/10 font-bold">
-            M
-          </div>
-          <h1 className="text-center text-lg font-semibold">Нууц үг сэргээх</h1>
-          <p className="mt-1 text-center text-xs text-black/50">
+        <div className="px-8 pt-8 pb-5 border-b border-black/10">
+        
+          <h1 className="text-center text-lg font-extrabold text-black">
+            Нууц үг сэргээх
+          </h1>
+          <p className="mt-1 text-center text-xs text-black/55">
             Бүртгэлтэй имэйлээ оруулаарай. Сэргээх холбоос очно.
           </p>
         </div>
@@ -84,7 +81,10 @@ export default function ResetPasswordPage() {
         <div className="px-8 py-6">
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label className="mb-2 block text-xs text-black/60">Имэйл хаяг</label>
+              <label className="mb-2 block text-xs font-semibold text-black">
+                Имэйл хаяг
+              </label>
+
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -92,21 +92,27 @@ export default function ResetPasswordPage() {
                 autoComplete="email"
                 placeholder="name@gmail.com"
                 className="
-                  w-full rounded-xl border border-white/10
-                  bg-white/5 px-4 py-3 text-sm text-black
+                  w-full
+                  rounded-xl
+                  border border-black
+                  bg-white
+                  px-4 py-3
+                  text-sm text-black
                   outline-none
-                  focus:border-white/20 focus:bg-white/10
+                  focus:ring-0
+                  focus:border-black
                 "
               />
             </div>
 
             {err && (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700">
                 {err}
               </div>
             )}
+
             {ok && (
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">
                 {ok}
               </div>
             )}
@@ -116,30 +122,28 @@ export default function ResetPasswordPage() {
               type="submit"
               className="
                 w-full rounded-xl
-                bg-white text-black
-                py-3 text-sm font-semibold
+                bg-blue-500 text-white
+                py-3 text-sm font-extrabold
                 hover:opacity-95
                 disabled:opacity-60
+                transition
               "
             >
               {loading ? "Түр хүлээнэ үү..." : "Сэргээх холбоос явуулах →"}
             </button>
 
-            <div className="flex items-center justify-between pt-1 text-xs text-black/50">
+            <div className="flex items-center justify-between pt-1 text-xs text-black/60">
               <Link href={`/login${callbackQS}`} className="hover:text-black">
-                ← Нэвтрэх рүү
+                 Нэвтрэх рүү буцах
               </Link>
 
-              <Link href={callbackUrl || "/"} className="hover:text-black">
-                Буцах →
-              </Link>
             </div>
           </form>
         </div>
 
-        <div className="mt-auto px-8 pb-7">
-          <div className="h-px w-full bg-white/10 mb-4" />
-          <p className="text-center text-[11px] text-black/40">
+        <div className="px-8 pb-7">
+          <div className="h-px w-full bg-black/10 mb-4" />
+          <p className="text-center text-[11px] text-black/45">
             Онлайн хичээлд хөрвүүлэгч • ebacreator платформ
           </p>
         </div>

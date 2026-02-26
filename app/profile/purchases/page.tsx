@@ -227,7 +227,6 @@ export default function PurchasesPage() {
   }
 
   return (
-    // ✅ IMPORTANT: page wrapper class нэмсэн (саарал давхаргыг “эндээс” удирдах)
     <div className="purchase-history-page min-h-[calc(100vh-80px)] text-black">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 pt-8 pb-14">
         <div className="flex items-end justify-between gap-3">
@@ -244,11 +243,6 @@ export default function PurchasesPage() {
           )}
         </div>
 
-        {/* =========================
-            1) History (PAID биш зүйлс)
-            ✅ Саарал wrapper арилгасан
-            ✅ Stroke бүгд 2px
-        ========================= */}
         <div className="mt-5 bg-transparent border-0 p-0 rounded-none">
           {err && (
             <div className="mb-3 rounded-xl border-2 border-red-500/30 bg-red-500/10 p-3 text-sm text-red-900">
@@ -270,8 +264,8 @@ export default function PurchasesPage() {
               Одоогоор худалдан авалтын түүх байхгүй байна.
             </div>
           ) : (
-            <div className="space-y-5">
-              {historyRows.map((r) => {
+            <div>
+              {historyRows.map((r, idx) => {
                 const st = String(r.status ?? "").toUpperCase();
                 const canContinue = st === "PENDING";
 
@@ -281,102 +275,109 @@ export default function PurchasesPage() {
                 const dur = durationText(r.durationLabel ?? null, r.durationDays ?? null);
 
                 return (
-                  <div
-                    key={r.id}
-                    className="
-                      rounded-2xl
-                      border border-black/15 bg-white/70
-                      p-6 min-h-[110px]
-                      sm:border-white/10 sm:bg-white/5 sm:min-h-[120px]
-                    "
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                      <div className="min-w-0 flex items-start gap-3">
-                        <div className="shrink-0">
-                          <div className="h-11 w-11 overflow-hidden rounded-xl border-2 border-black/10 bg-white">
-                            {hasThumb ? (
-                              <Image
-                                src={thumb}
-                                alt={r.courseTitle || "Course"}
-                                width={44}
-                                height={44}
-                                className="h-11 w-11 object-cover"
-                              />
-                            ) : (
-                              <div className="h-11 w-11" />
-                            )}
+                  <div key={r.id}>
+                    <div
+                      className="
+                        rounded-2xl
+                        border border-black/15 bg-white/70
+                        p-6 min-h-[110px]
+                        sm:border-white/10 sm:bg-white/5 sm:min-h-[120px]
+                      "
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                        <div className="min-w-0 flex items-start gap-3">
+                          <div className="shrink-0">
+                            <div className="h-11 w-11 overflow-hidden rounded-xl border-2 border-black/10 bg-white">
+                              {hasThumb ? (
+                                <Image
+                                  src={thumb}
+                                  alt={r.courseTitle || "Course"}
+                                  width={44}
+                                  height={44}
+                                  className="h-11 w-11 object-cover"
+                                />
+                              ) : (
+                                <div className="h-11 w-11" />
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="truncate text-[15px] font-extrabold text-black sm:text-[16px]">
+                              {r.courseTitle?.trim() ||
+                                (r.courseId ? `Course: ${r.courseId}` : "—")}
+                            </div>
+
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <div className="text-[11px] font-semibold text-black/60">
+                                #{r.id.slice(0, 8).toUpperCase()}
+                              </div>
+
+                              <span
+                                className={`inline-flex items-center rounded-full border-2
+                                  px-2 py-[2px] leading-none text-[11px]
+                                  ${badge(r.status)}`}
+                              >
+                                {label(r.status)}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="min-w-0">
-                          <div className="truncate text-[15px] font-extrabold text-black sm:text-[16px]">
-                            {r.courseTitle?.trim() ||
-                              (r.courseId ? `Course: ${r.courseId}` : "—")}
-                          </div>
+                        <div className="sm:text-right sm:shrink-0">
+                          {/* ✅ Desktop дээр үнэ том/тод */}
+                          <div className="hidden text-sm sm:text-[18px] font-black tracking-tight text-black sm:block">
+  <span className="text-black/45 font-semibold">
+    {dur}
+  </span>
+  <span className="mx-1 text-black/30 font-semibold">/</span>
+  <span>
+    {money(r.amount)}
+  </span>
+</div>
 
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <div className="text-[11px] font-semibold text-black/60">
-                              #{r.id.slice(0, 8).toUpperCase()}
-                            </div>
-
-                            <span
-                              className={`inline-flex items-center rounded-full border-2
-                                px-2 py-[2px] leading-none text-[11px]
-                                ${badge(r.status)}`}
-                            >
-                              {label(r.status)}
+                          {/* ✅ MOBILE: “хоног / үнэ” мөр ХЭВЭЭР (устгахгүй) */}
+                          <div className="mt-2 flex items-center justify-center gap-2 sm:hidden">
+                            <span className="text-[16px] font-semibold text-black/45">
+                              {dur}
+                            </span>
+                            <span className="text-[14px] font-semibold text-black/25">/</span>
+                            <span className="text-[18px] leading-none font-black text-black">
+                              {money(r.amount)}
                             </span>
                           </div>
 
-                          <div className="mt-1 text-xs text-black/55">
-                            {st === "PENDING" ? dur : fmt(r.createdAt)}
-                          </div>
+                          {canContinue ? (
+                            <Link
+                              href={`/pay/${r.id}`}
+                              className="
+                                mt-3
+                                inline-flex w-full items-center justify-center
+                                rounded-2xl
+                                border border-black/90 hover:border-black/20
+                                bg-gradient-to-r from-cyan-300 to-blue-300
+                                px-4 py-3 text-[13px] font-extrabold !text-white
+                                shadow-[0_10px_28px_rgba(37,99,235,0.25)]
+                                active:scale-[0.99]
+                                transition
+                                sm:mt-2 sm:w-auto sm:rounded-xl sm:border-2 sm:border-white sm:bg-white/10 sm:px-3 sm:py-2 sm:text-xs sm:font-semibold sm:text-black sm:shadow-none sm:active:scale-100
+                              "
+                            >
+                              Төлбөр үргэлжлүүлэх
+                            </Link>
+                          ) : (
+                            <div className="mt-3 text-center text-xs font-medium text-black/45 sm:mt-2 sm:text-right">
+                              —
+                            </div>
+                          )}
                         </div>
-                      </div>
-
-                      <div className="sm:text-right sm:shrink-0">
-                        {/* ✅ Desktop дээр үнэ том/тод */}
-                        <div className="hidden text-sm font-extrabold text-black sm:block">
-                          {money(r.amount)}
-                        </div>
-
-                        {/* ✅ MOBILE: “45 хоног / ҮНЭ” */}
-                        <div className="mt-2 flex items-center justify-center gap-2 sm:hidden">
-                          <span className="text-[16px] font-semibold text-black/45">
-                            {dur}
-                          </span>
-                          <span className="text-[14px] font-semibold text-black/25">/</span>
-                          <span className="text-[18px] leading-none font-black text-black">
-                            {money(r.amount)}
-                          </span>
-                        </div>
-
-                        {/* ✅ Continue payment button: blue stroke + gradient */}
-                        {canContinue ? (
-                          <Link
-                            href={`/pay/${r.id}`}
-                            className="
-                              mt-3
-                              inline-flex w-full items-center justify-center
-                              rounded-2xl
-                              border-2 border-white/90 hover:border-white
-                              bg-gradient-to-r from-cyan-500 to-blue-600
-                              px-4 py-3 text-[13px] font-extrabold !text-black
-                              shadow-[0_10px_28px_rgba(37,99,235,0.25)]
-                              active:scale-[0.99]
-                              transition
-                              sm:mt-2 sm:w-auto sm:rounded-xl sm:border-2 sm:border-white sm:bg-white/10 sm:px-3 sm:py-2 sm:text-xs sm:font-semibold sm:text-black sm:shadow-none sm:active:scale-100
-                            "
-                          >
-                            Төлбөр үргэлжлүүлэх
-                          </Link>
-                        ) : (
-                          <div className="mt-3 text-center text-xs font-medium text-black/45 sm:mt-2 sm:text-right">
-                            —
-                          </div>
-                        )}
                       </div>
                     </div>
+
+                    {/* ✅ Divider: УТСАН дээр харагдахгүй, зөвхөн sm+ дээр харагдана */}
+                    {idx < historyRows.length - 1 && (
+                      <div className="my-2.5 hidden border-t border-dashed border-black/35 sm:block" />
+                    )}
                   </div>
                 );
               })}

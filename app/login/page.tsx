@@ -30,7 +30,6 @@ export default function LoginPage() {
     return safeCallbackUrl(searchParams?.get("callbackUrl"));
   }, [searchParams]);
 
-  // ✅ зөвхөн callbackUrl-г л дамжуулна (урт qs үүсгэхгүй)
   const callbackQS = useMemo(() => {
     return `?callbackUrl=${encodeURIComponent(callbackUrl)}`;
   }, [callbackUrl]);
@@ -50,7 +49,6 @@ export default function LoginPage() {
   const [err, setErr] = useState<string>("");
   const [ok, setOk] = useState<string>("");
 
-  // ✅ баталгаажуулах мэйл дахин явуулах UI
   const [needsVerify, setNeedsVerify] = useState(false);
 
   const hardRedirectFallback = () => {
@@ -68,7 +66,6 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // ✅ resend хийхийн тулд түр signIn хийнэ
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
 
       if (cred.user.emailVerified) {
@@ -85,7 +82,6 @@ export default function LoginPage() {
         handleCodeInApp: false,
       });
 
-      // ✅ resend хийсний дараа signOut хийнэ
       await signOut(auth);
 
       setNeedsVerify(true);
@@ -120,7 +116,6 @@ export default function LoginPage() {
     setNeedsVerify(false);
     setLoading(true);
 
-    // ✅ Register үед "нууц үг давтах" шалгана
     if (mode === "register") {
       if (password !== confirmPassword) {
         setErr("Нууц үг таарахгүй байна. Дахин шалгана уу.");
@@ -133,7 +128,6 @@ export default function LoginPage() {
       if (mode === "login") {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
 
-        // ✅ Email баталгаажаагүй бол нэвтрүүлэхгүй
         if (!cred.user.emailVerified) {
           await signOut(auth);
           setNeedsVerify(true);
@@ -149,13 +143,11 @@ export default function LoginPage() {
       } else {
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
 
-        // ✅ Баталгаажуулах мэйл явуулна
         await sendEmailVerification(cred.user, {
           url: `${window.location.origin}/login`,
           handleCodeInApp: false,
         });
 
-        // ✅ Шууд нэвтрүүлэхгүй — signOut
         await signOut(auth);
 
         setNeedsVerify(true);
@@ -178,7 +170,7 @@ export default function LoginPage() {
         }
       } else {
         if (code === "auth/email-already-in-use") {
-          setErr("Энэ имэйл өмнө нь бүртгэлтэй байна. Нэвтрэх таб руу ороод орно уу.");
+          setErr("Энэ имэйл өмнө нь бүртгэлтэй байна. Нэвтрэх рүү орж нэвтэрнэ үү.");
         } else if (code === "auth/invalid-email") {
           setErr("Имэйл хаяг буруу форматтай байна.");
         } else if (code === "auth/weak-password") {
@@ -196,6 +188,10 @@ export default function LoginPage() {
     }
   };
 
+  const inputCls =
+  "w-full h-12 rounded-2xl bg-white !bg-white px-4 text-sm text-black outline-none transition " +
+  "border border-black focus:border-black";
+
   return (
     <main className="w-full bg-white">
       <div className="mx-auto flex min-h-[calc(100dvh-80px)] w-full items-center justify-center px-4 py-10">
@@ -203,112 +199,52 @@ export default function LoginPage() {
           className="
             w-[520px] max-w-[92vw]
             rounded-[24px]
-        border-4 border-black/40
             bg-white
             overflow-hidden
-            shadow-[0_0_0_1px_rgba(59,130,246,0.12),0_24px_90px_rgba(0,0,0,0.18)]
+            shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_24px_90px_rgba(0,0,0,0.16)]
           "
         >
-          {/* Top */}
-          <div className="px-8 pt-8 pb-6 border-b border-black/10">
-            <div className="mx-auto mb-1 flex items-center justify-between">
-              <div className="h-10 w-10" />
-              <div />
-            </div>
-
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => {
-                  setMode("login");
-                  setErr("");
-                  setOk("");
-                  setNeedsVerify(false);
-                  setConfirmPassword("");
-                }}
-                className={[
-                  "h-11 rounded-xl border-2 px-3 text-sm font-semibold transition",
-                  loading ? "opacity-60 cursor-not-allowed" : "",
-                  mode === "login"
-                    ? "border-black bg-white text-black"
-                    : "border-black/40 bg-white text-black/60 hover:text-black",
-                ].join(" ")}
-              >
-                НЭВТРЭХ
-              </button>
-
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => {
-                  setMode("register");
-                  setErr("");
-                  setOk("");
-                  setNeedsVerify(false);
-                  setConfirmPassword("");
-                }}
-                className={[
-                  "h-11 rounded-xl border-2 px-3 text-sm font-semibold transition",
-                  loading ? "opacity-60 cursor-not-allowed" : "",
-                  mode === "register"
-                    ? "border-black bg-white text-black"
-                    : "border-black/40 bg-white text-black/60 hover:text-black",
-                ].join(" ")}
-              >
-                БҮРТГҮҮЛЭХ
-              </button>
+          {/* Header */}
+          <div className="px-8 pt-10 pb-6">
+            <div className="text-center">
+              <div className="text-[20px] font-extrabold text-black">
+                Welcome to Master AI
+              </div>
+              <div className="mt-2 text-[12px] text-black/60 leading-relaxed">
+                И-мэйл хаяг болон нууц үгээр нэвтэрч орно уу.
+              </div>
             </div>
           </div>
 
-          {/* Body */}
-          <div className="px-8 py-7">
+          {/* Form */}
+          <div className="px-8 pb-8">
             <form onSubmit={onSubmit} className="space-y-4">
               {/* Email */}
               <div>
-                <label className="mb-2 block text-xs text-black/60">И-мэйл хаяг</label>
+                <label className="mb-2 block text-xs text-black/70">И-мэйл хаяг</label>
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   type="email"
                   autoComplete="email"
-                  className="
-                    w-full h-12 rounded-xl
-                    border border-black/15
-                    bg-white
-                    px-4
-                    text-sm text-black
-                    outline-none transition
-                    focus:border-black/30
-                  "
+                  className={inputCls}
                 />
               </div>
 
               {/* Password */}
               <div>
-                <label className="mb-2 block text-xs text-black/60">Нууц үг</label>
+                <label className="mb-2 block text-xs text-black/70">Нууц үг</label>
                 <input
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   type="password"
                   autoComplete={mode === "login" ? "current-password" : "new-password"}
-                  className="
-                    w-full h-12 rounded-xl
-                    border border-black/15
-                    bg-white
-                    px-4
-                    text-sm text-black
-                    outline-none transition
-                    focus:border-black/30
-                  "
+                  className={inputCls}
                 />
 
                 {mode === "login" && (
                   <div className="mt-3 text-xs">
-                    <Link
-                      href={`/reset-password${callbackQS}`}
-                      className="text-black/55 hover:text-black"
-                    >
+                    <Link href={`/reset-password${callbackQS}`} className="text-black/70 hover:text-black">
                       Нууц үг сэргээх
                     </Link>
                   </div>
@@ -318,33 +254,34 @@ export default function LoginPage() {
               {/* Confirm password (REGISTER ONLY) */}
               {mode === "register" && (
                 <div>
-                  <label className="mb-2 block text-xs text-black/60">Нууц үг давтах</label>
+                  <label className="mb-2 block text-xs text-black/70">Нууц үг давтах</label>
                   <input
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     type="password"
                     autoComplete="new-password"
-                    className="
-                      w-full h-12 rounded-xl
-                      border border-black/15
-                      bg-white
-                      px-4
-                      text-sm text-black
-                      outline-none transition
-                      focus:border-black/30
-                    "
+                    className={inputCls}
                   />
                 </div>
               )}
 
               {/* Error / Success */}
-              {err && (
-                <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700">
-                  {err}
-                </div>
-              )}
+             {err && (
+  <div
+    className="
+      rounded-xl
+      border border-red-500
+      bg-red-50
+      px-4 py-3
+      text-sm font-medium
+      text-red-600
+    "
+  >
+    {err}
+  </div>
+)}
               {ok && (
-                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">
+                <div className="rounded-2xl border-2 border-black bg-white px-3 py-2 text-xs text-black">
                   {ok}
                 </div>
               )}
@@ -356,39 +293,67 @@ export default function LoginPage() {
                   disabled={loading}
                   onClick={resendVerification}
                   className="
-                    w-full h-12 rounded-xl
-                    border border-black/15 bg-white
-                    text-sm font-semibold text-black
+                    w-full h-12 rounded-2xl
+                    border-2 border-black bg-white
+                    text-sm font-bold text-black
                     hover:bg-black/[0.03]
                     disabled:opacity-60
+                    transition
                   "
                 >
                   Баталгаажуулах мэйл дахин явуулах
                 </button>
               )}
 
-              <button
-                disabled={loading}
-                type="submit"
-                className="
-                  w-full h-12 rounded-xl
-                  bg-gradient-to-r from-sky-500 to-blue-600
-                  text-black text-sm font-bold tracking-wide
-                  shadow-[0_14px_60px_rgba(0,120,255,0.25)]
-                  hover:brightness-110
-                  disabled:opacity-60
-                  transition
-                "
-              >
-                {loading ? "Түр хүлээнэ үү..." : mode === "login" ? "НЭВТРЭХ" : "БҮРТГҮҮЛЭХ"}
-              </button>
+             {/* Buttons */}
+<div className="pt-2 space-y-3">
+
+  {/* PRIMARY */}
+  <button
+    disabled={loading}
+    type="submit"
+    className={[
+      "w-full h-12 rounded-full text-sm font-extrabold tracking-wide transition",
+      loading ? "opacity-60" : "",
+      mode === "login"
+        ? "bg-gradient-to-r from-sky-400 to-blue-400 text-black shadow-[0_14px_60px_rgba(0,120,255,0.25)]"
+        : "bg-gradient-to-r from-green-300 to-emerald-300 text-black shadow-[0_14px_60px_rgba(255,140,0,0.25)]",
+    ].join(" ")}
+  >
+    {loading
+      ? "Түр хүлээнэ үү..."
+      : mode === "login"
+      ? "НЭВТРЭХ"
+      : "БҮРТГҮҮЛЭХ"}
+  </button>
+
+  {/* SECONDARY */}
+  <button
+    type="button"
+    disabled={loading}
+    onClick={() => {
+      setMode((m) => (m === "login" ? "register" : "login"));
+      setErr("");
+      setOk("");
+      setNeedsVerify(false);
+      setConfirmPassword("");
+    }}
+    className={[
+      "w-full h-12 rounded-full border border-black bg-white text-sm font-extrabold transition",
+      loading ? "opacity-60" : "",
+      "text-black opacity-20 hover:opacity-40",
+    ].join(" ")}
+  >
+    {mode === "login" ? "БҮРТГҮҮЛЭХ" : "НЭВТРЭХ"}
+  </button>
+</div>
             </form>
           </div>
 
           {/* Footer */}
-          <div className="px-8 pb-7">
+          <div className="px-8 pb-8">
             <div className="h-px w-full bg-black/10 mb-4" />
-            <p className="mx-auto max-w-[360px] text-center text-[11px] leading-snug text-black/45">
+            <p className="mx-auto max-w-[360px] text-center text-[11px] leading-snug text-black/55">
               Онлайн хичээл • ebacreator платформ
             </p>
           </div>

@@ -319,3 +319,21 @@ video::-webkit-media-controls-picture-in-picture-button {
   }
 }
 
+/* ✅ Fix: Chrome/Edge autofill (саарал/цэнхэр fill) -> ЦАГААН болгоно */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
+  box-shadow: 0 0 0px 1000px #ffffff inset !important;
+
+  -webkit-text-fill-color: #000000 !important;
+  caret-color: #000000 !important;
+
+  transition: background-color 9999s ease-out 0s !important;
+}

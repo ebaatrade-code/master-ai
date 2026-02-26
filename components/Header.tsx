@@ -16,6 +16,9 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
+// ✅ Drawer login UI
+import LoginSheet from "@/components/LoginSheet";
+
 function cn(...xs: Array<string | false | undefined | null>) {
   return xs.filter(Boolean).join(" ");
 }
@@ -27,23 +30,16 @@ type ThemeMode = "dark" | "light";
 
 function applyTheme(_mode: ThemeMode) {
   const root = document.documentElement;
-
-  // ✅ FORCE LIGHT: never allow dark
   root.classList.remove("dark");
-
-  // ✅ Optional: make native UI (inputs/scrollbars) light
   try {
     (root.style as any).colorScheme = "light";
   } catch {}
-
-  // ✅ keep storage consistent
   try {
     localStorage.setItem("theme", "light");
   } catch {}
 }
 
 function getSavedTheme(): ThemeMode {
-  // ✅ FORCE LIGHT
   return "light";
 }
 
@@ -59,8 +55,6 @@ function saveLang(l: Lang) {
 
 /* =========================
    ✅ Unread Notifications Count (readAt-based)
-   - schema: users/{uid}/notifications/{id}
-   - unread: !readAt
 ========================= */
 function useUnreadNotiCount(uid?: string) {
   const [count, setCount] = useState(0);
@@ -94,8 +88,6 @@ function useUnreadNotiCount(uid?: string) {
 
 /* =========================
    ✅ Admin "New Requests" Count (supportRequests OPEN)
-   - schema: supportRequests/{id}
-   - new/open: status == "OPEN"
 ========================= */
 function useOpenRequestsCount(enabled: boolean) {
   const [count, setCount] = useState(0);
@@ -281,7 +273,6 @@ function IconHamburger({ className = "" }: { className?: string }) {
   );
 }
 
-/* ✅ NEW: Support / Help icon */
 function IconHelp({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -323,7 +314,6 @@ function ProfileDropdown({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
-  // ✅ Light-only (state kept only for UI label)
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [lang, setLang] = useState<Lang>("MN");
 
@@ -336,11 +326,11 @@ function ProfileDropdown({
   }, [displayName, email]);
 
   useEffect(() => {
-    const t = getSavedTheme(); // always light
+    const t = getSavedTheme();
     const l = getSavedLang();
     setTheme(t);
     setLang(l);
-    applyTheme(t); // force remove dark
+    applyTheme(t);
   }, []);
 
   useEffect(() => {
@@ -366,7 +356,6 @@ function ProfileDropdown({
   };
 
   const toggleTheme = () => {
-    // ✅ Light-only: do nothing but keep UI stable
     setTheme("light");
     applyTheme("light");
   };
@@ -377,7 +366,6 @@ function ProfileDropdown({
     saveLang(next);
   };
 
-  // ✅ WHITE dropdown styles
   const iconBox =
     "grid h-10 w-10 place-items-center rounded-2xl bg-black/[0.03] ring-1 ring-black/10 group-hover:bg-black/[0.06] group-hover:ring-black/20 transition";
   const itemRow =
@@ -385,7 +373,6 @@ function ProfileDropdown({
 
   return (
     <div ref={ref} className="relative">
-      {/* PROFILE pill */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -396,7 +383,6 @@ function ProfileDropdown({
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {/* ✅ Profile pill unread badge */}
         <UnreadBadge count={unreadCount} className="-top-2 -right-2" />
 
         <span
@@ -420,7 +406,6 @@ function ProfileDropdown({
         </span>
       </button>
 
-      {/* Dropdown panel: PURE WHITE */}
       {open && (
         <div
           className={cn(
@@ -470,7 +455,6 @@ function ProfileDropdown({
             Худалдан авалтын түүх
           </Link>
 
-          {/* ✅ notifications + unread badge */}
           <Link
             href="/notifications"
             onClick={() => setOpen(false)}
@@ -484,7 +468,6 @@ function ProfileDropdown({
             Шинэ мэдэгдэл
           </Link>
 
-          {/* ✅ NEW: “АСУУДАЛ ШИЙДҮҮЛЭХ” (Support Request) — placed right under notifications */}
           <Link
             href="/request?source=menu"
             onClick={() => setOpen(false)}
@@ -518,7 +501,6 @@ function ProfileDropdown({
             Гарах
           </button>
 
-          {/* footer controls */}
           <div className="border-t border-black/10 px-5 py-4">
             <div className="grid gap-2">
               <button
@@ -680,7 +662,6 @@ function MobileMenu({
             </button>
           )}
 
-          {/* ✅ mobile notifications + unread badge */}
           {isAuthed && (
             <button onClick={() => go("/notifications")} className={item}>
               <span className="relative inline-flex items-center">
@@ -691,7 +672,6 @@ function MobileMenu({
             </button>
           )}
 
-          {/* ✅ NEW: “АСУУДАЛ ШИЙДҮҮЛЭХ” under notifications */}
           {isAuthed && (
             <button onClick={() => go("/request?source=menu")} className={item}>
               <span>Асуудал шийдүүлэх</span>
@@ -743,6 +723,97 @@ function MobileMenu({
 }
 
 /* =========================
+   ✅ Login Side Drawer (Header-triggered) — zadlan-like
+========================= */
+function LoginDrawer({
+  open,
+  onClose,
+  callbackUrl,
+}: {
+  open: boolean;
+  onClose: () => void;
+  callbackUrl: string;
+}) {
+  const [mountedOpen, setMountedOpen] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      const t = window.setTimeout(() => setMountedOpen(true), 10);
+      return () => window.clearTimeout(t);
+    } else {
+      setMountedOpen(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[99999]">
+     <button
+  aria-label="Close login"
+  onClick={onClose}
+  className={cn(
+    // ✅ softer dim + blur (цаад тал бүдэг)
+   "absolute inset-0 bg-black/60 backdrop-blur-[5px] transition-opacity duration-200",
+    mountedOpen ? "opacity-100" : "opacity-0"
+  )}
+/>
+
+      <div
+  className={cn(
+    // ✅ Floating position (4 талдаа зай гаргана)
+    "absolute right-4 top-4 bottom-4",
+
+    // ✅ Width хэвээр
+    "w-[calc(100%-2rem)] sm:w-[520px] md:w-[560px]",
+
+    // ✅ 4 талдаа бөөрөнхий
+    "bg-white rounded-[32px]",
+
+    // ✅ Premium border + shadow
+    "ring-1 ring-black/10",
+    "shadow-[0_50px_160px_rgba(0,0,0,0.28)]",
+
+    "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+    mountedOpen ? "translate-x-0" : "translate-x-[110%]"
+  )}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="relative h-14 px-6 flex items-center">
+          <div className="text-[12px] font-extrabold tracking-widest text-black/35">
+            НЭВТРЭХ
+          </div>
+
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-1/2 -translate-y-1/2 h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white hover:bg-black/[0.03] active:scale-[0.98]"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="h-[calc(100%-56px)] overflow-auto">
+          <div className="min-h-full flex items-center justify-center px-6 py-10">
+            <LoginSheet callbackUrl={callbackUrl} initialMode="login" onClose={onClose} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
    Header (Desktop + Mobile)
 ========================= */
 export default function Header() {
@@ -757,10 +828,6 @@ export default function Header() {
 
   const currentUrl = useMemo(() => `${pathname || "/"}${qs}`, [pathname, qs]);
 
-  const goLogin = () => {
-    router.push(`/login?callbackUrl=${encodeURIComponent(currentUrl)}`);
-  };
-
   const onLogout = async () => {
     await logout();
     router.push("/");
@@ -772,10 +839,7 @@ export default function Header() {
   const [adminOpen, setAdminOpen] = useState(false);
   const adminRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ unread notifications count (realtime)
   const unreadCount = useUnreadNotiCount(user?.uid);
-
-  // ✅ admin new requests count (realtime)
   const openReqCount = useOpenRequestsCount(!!user && isAdmin);
 
   useEffect(() => {
@@ -795,187 +859,200 @@ export default function Header() {
     setAdminOpen(false);
   }, [pathname]);
 
+  // ✅ login drawer state
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginCb, setLoginCb] = useState<string>("/");
+
+  const goLogin = () => {
+    setLoginCb(currentUrl || "/");
+    setLoginOpen(true);
+  };
+
+  const closeLogin = () => setLoginOpen(false);
+
   return (
-    <header className="sticky top-0 z-50 bg-transparent text-black">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        {/* LEFT */}
-        <div className="flex items-center gap-2">
-          <button
-            className="md:hidden h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open menu"
-          >
-            <IconHamburger className="h-5 w-5 text-black" />
-          </button>
-
-          <Link href="/" className="group flex items-center gap-3 select-none">
-            <span className="text-sm font-black tracking-wide text-black">EBACREATOR</span>
-            <span
-              className={cn(
-                "hidden sm:block h-px w-10",
-                "bg-red-500",
-                "shadow-[0_0_10px_rgba(239,68,68,0.95)]"
-              )}
-            />
-          </Link>
-        </div>
-
-        {/* RIGHT desktop nav */}
-        <nav className="hidden md:flex items-center gap-2 text-sm">
-          <Link
-            className="rounded-full px-3 py-2 font-extrabold text-black hover:bg-black/[0.04]"
-            href="/contents"
-          >
-            СУРГАЛТУУД
-          </Link>
-
-          {!loading && !user ? (
+    <>
+      <header className="sticky top-0 z-50 bg-transparent text-black">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push(`/login?callbackUrl=${encodeURIComponent("/my-content")}`)}
-              className="rounded-full px-3 py-2 font-extrabold text-black hover:bg-black/[0.04]"
+              className="md:hidden h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open menu"
             >
-              МИНИЙ СУРГАЛТУУД
+              <IconHamburger className="h-5 w-5 text-black" />
             </button>
-          ) : (
+
+            <Link href="/" className="group flex items-center gap-3 select-none">
+              <span className="text-sm font-black tracking-wide text-black">EBACREATOR</span>
+              <span
+                className={cn(
+                  "hidden sm:block h-px w-10",
+                  "bg-red-500",
+                  "shadow-[0_0_10px_rgba(239,68,68,0.95)]"
+                )}
+              />
+            </Link>
+          </div>
+
+          <nav className="hidden md:flex items-center gap-2 text-sm">
             <Link
               className="rounded-full px-3 py-2 font-extrabold text-black hover:bg-black/[0.04]"
-              href="/my-content"
+              href="/contents"
             >
-              МИНИЙ СУРГАЛТУУД
+              СУРГАЛТУУД
             </Link>
-          )}
 
-          {!loading && user && isAdmin && (
-            <div ref={adminRef} className="relative">
+            {!loading && !user ? (
               <button
-                type="button"
-                onClick={() => setAdminOpen((v) => !v)}
-                onMouseEnter={() => setAdminOpen(true)}
-                className={cn(
-                  "relative rounded-full px-3 py-2 font-extrabold text-black",
-                  "hover:bg-black/[0.04]",
-                  adminOpen && "bg-black/[0.04]"
-                )}
-                aria-haspopup="menu"
-                aria-expanded={adminOpen}
+                onClick={() => {
+                  setLoginCb("/my-content");
+                  setLoginOpen(true);
+                }}
+                className="rounded-full px-3 py-2 font-extrabold text-black hover:bg-black/[0.04]"
               >
-                {/* ✅ Admin button badge (new OPEN requests) */}
-                <UnreadBadge count={openReqCount} className="-top-2 -right-2" />
-                АДМИН
+                МИНИЙ СУРГАЛТУУД
               </button>
+            ) : (
+              <Link
+                className="rounded-full px-3 py-2 font-extrabold text-black hover:bg-black/[0.04]"
+                href="/my-content"
+              >
+                МИНИЙ СУРГАЛТУУД
+              </Link>
+            )}
 
-              {adminOpen && (
-                <div
-                  onMouseLeave={() => setAdminOpen(false)}
+            {!loading && user && isAdmin && (
+              <div ref={adminRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAdminOpen((v) => !v)}
+                  onMouseEnter={() => setAdminOpen(true)}
                   className={cn(
-                    "absolute right-0 mt-2 w-52 overflow-hidden rounded-2xl",
-                    "bg-white text-black",
-                    "border border-black/15 shadow-[0_20px_60px_rgba(0,0,0,0.25)]",
-                    "ring-1 ring-black/10 z-[999]"
+                    "relative rounded-full px-3 py-2 font-extrabold text-black",
+                    "hover:bg-black/[0.04]",
+                    adminOpen && "bg-black/[0.04]"
                   )}
-                  role="menu"
+                  aria-haspopup="menu"
+                  aria-expanded={adminOpen}
                 >
-                  <Link
-                    href="/admin"
-                    onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
-                    role="menuitem"
-                  >
-                    ADMIN Home
-                  </Link>
-                  <div className="h-px bg-black/10" />
-                  <Link
-                    href="/admin/users"
-                    onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
-                    role="menuitem"
-                  >
-                    USERS
-                  </Link>
-                  <Link
-                    href="/admin/banner"
-                    onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
-                    role="menuitem"
-                  >
-                    Banner
-                  </Link>
-                  <Link
-                    href="/analist"
-                    onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
-                    role="menuitem"
-                  >
-                    ANALIST
-                  </Link>
+                  <UnreadBadge count={openReqCount} className="-top-2 -right-2" />
+                  АДМИН
+                </button>
 
-                  {/* ✅ Admin dropdown: Requests + badge */}
-                  <Link
-                    href="/admin/requests"
-                    onClick={() => setAdminOpen(false)}
-                    className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
-                    role="menuitem"
+                {adminOpen && (
+                  <div
+                    onMouseLeave={() => setAdminOpen(false)}
+                    className={cn(
+                      "absolute right-0 mt-2 w-52 overflow-hidden rounded-2xl",
+                      "bg-white text-black",
+                      "border border-black/15 shadow-[0_20px_60px_rgba(0,0,0,0.25)]",
+                      "ring-1 ring-black/10 z-[999]"
+                    )}
+                    role="menu"
                   >
-                    <span className="relative inline-flex items-center">
-                      Хүсэлтийн түүх
-                      <UnreadBadge
-                        count={openReqCount}
-                        className="!relative !-top-0 !-right-0 ml-2"
-                      />
-                    </span>
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
+                    <Link
+                      href="/admin"
+                      onClick={() => setAdminOpen(false)}
+                      className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
+                      role="menuitem"
+                    >
+                      ADMIN Home
+                    </Link>
+                    <div className="h-px bg-black/10" />
+                    <Link
+                      href="/admin/users"
+                      onClick={() => setAdminOpen(false)}
+                      className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
+                      role="menuitem"
+                    >
+                      USERS
+                    </Link>
+                    <Link
+                      href="/admin/banner"
+                      onClick={() => setAdminOpen(false)}
+                      className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
+                      role="menuitem"
+                    >
+                      Banner
+                    </Link>
+                    <Link
+                      href="/analist"
+                      onClick={() => setAdminOpen(false)}
+                      className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
+                      role="menuitem"
+                    >
+                      ANALIST
+                    </Link>
 
-          {loading && <div className="ml-2 h-9 w-24 rounded-full bg-black/5 animate-pulse" />}
+                    <Link
+                      href="/admin/requests"
+                      onClick={() => setAdminOpen(false)}
+                      className="block px-4 py-3 text-sm font-extrabold text-black hover:bg-black/[0.04]"
+                      role="menuitem"
+                    >
+                      <span className="relative inline-flex items-center">
+                        Хүсэлтийн түүх
+                        <UnreadBadge
+                          count={openReqCount}
+                          className="!relative !-top-0 !-right-0 ml-2"
+                        />
+                      </span>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
 
-          {!loading && !user && (
+            {loading && <div className="ml-2 h-9 w-24 rounded-full bg-black/5 animate-pulse" />}
+
+            {!loading && !user && (
+              <button
+                onClick={goLogin}
+                className="rounded-full bg-white px-3 py-2 font-extrabold text-black ring-1 ring-black/70 hover:bg-black/[0.04]"
+              >
+                НЭВТРЭХ
+              </button>
+            )}
+
+            {!loading && user && (
+              <div className="flex items-center gap-2">
+                <ProfileDropdown
+                  uid={user.uid}
+                  email={user.email || ""}
+                  displayName={userDoc?.name || ""}
+                  avatarUrl={(userDoc as any)?.avatarUrl || ""}
+                  onLogout={onLogout}
+                  unreadCount={unreadCount}
+                />
+              </div>
+            )}
+          </nav>
+
+          <div className="md:hidden flex items-center gap-2">
             <button
-              onClick={goLogin}
-              className="rounded-full bg-white px-3 py-2 font-extrabold text-black ring-1 ring-black/70 hover:bg-black/[0.04]"
+              onClick={() => (user ? router.push("/profile") : goLogin())}
+              className="h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
+              aria-label="Profile"
             >
-              НЭВТРЭХ
+              <IconUser className="h-5 w-5 text-black" />
             </button>
-          )}
-
-          {!loading && user && (
-            <div className="flex items-center gap-2">
-              <ProfileDropdown
-                uid={user.uid}
-                email={user.email || ""}
-                displayName={userDoc?.name || ""}
-                avatarUrl={(userDoc as any)?.avatarUrl || ""}
-                onLogout={onLogout}
-                unreadCount={unreadCount}
-              />
-            </div>
-          )}
-        </nav>
-
-        {/* mobile right */}
-        <div className="md:hidden flex items-center gap-2">
-          <button
-            onClick={() => (user ? router.push("/profile") : goLogin())}
-            className="h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
-            aria-label="Profile"
-          >
-            <IconUser className="h-5 w-5 text-black" />
-          </button>
+          </div>
         </div>
-      </div>
 
-      <MobileMenu
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        isAuthed={!!user}
-        onLogout={onLogout}
-        goLogin={goLogin}
-        isAdmin={isAdmin}
-        unreadCount={unreadCount}
-        openReqCount={openReqCount}
-      />
-    </header>
+        <MobileMenu
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          isAuthed={!!user}
+          onLogout={onLogout}
+          goLogin={goLogin}
+          isAdmin={isAdmin}
+          unreadCount={unreadCount}
+          openReqCount={openReqCount}
+        />
+      </header>
+
+      <LoginDrawer open={loginOpen} onClose={closeLogin} callbackUrl={loginCb} />
+    </>
   );
 }
