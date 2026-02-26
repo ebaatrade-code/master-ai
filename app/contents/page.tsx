@@ -18,10 +18,14 @@ type Course = {
 
   category?: string;
   year?: string;
+
+  // ✅ NEW: visibility
+  isPublished?: boolean;
 };
 
 export default function ContentsPage() {
-  const { user, loading, purchasedCourseIds } = useAuth();
+  // ✅ role авна (admin бол бүхнийг харуулахад хэрэгтэй)
+  const { user, loading, purchasedCourseIds, role } = useAuth() as any;
 
   const purchasedSet = useMemo(
     () => new Set(purchasedCourseIds ?? []),
@@ -33,9 +37,12 @@ export default function ContentsPage() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    let alive = true;
+
     const loadCourses = async () => {
       setFetching(true);
       setErr(null);
+
       try {
         const q = query(collection(db, "courses"), orderBy("title", "asc"));
         const snap = await getDocs(q);
@@ -49,17 +56,29 @@ export default function ContentsPage() {
           } as Course;
         });
 
-        setCourses(list);
+        // ✅ FIX:
+        // - Admin: бүгдийг харуулна
+        // - Бусад: isPublished === false бол нуух
+        const visible =
+          role === "admin"
+            ? list
+            : list.filter((c: any) => c?.isPublished !== false);
+
+        if (alive) setCourses(visible);
       } catch (e) {
         console.error("loadCourses error:", e);
-        setErr("Контент уншихад алдаа гарлаа.");
+        if (alive) setErr("Контент уншихад алдаа гарлаа.");
       } finally {
-        setFetching(false);
+        if (alive) setFetching(false);
       }
     };
 
     loadCourses();
-  }, []);
+
+    return () => {
+      alive = false;
+    };
+  }, [role]);
 
   if (fetching) {
     return (
@@ -84,8 +103,7 @@ export default function ContentsPage() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 text-black">
       <h2 className="text-3xl font-extrabold">Контентууд</h2>
-      <p className="mt-2 text-sm text-black/60">
- </p>
+      <p className="mt-2 text-sm text-black/60"></p>
 
       {!loading && !user ? (
         <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-black/70">
