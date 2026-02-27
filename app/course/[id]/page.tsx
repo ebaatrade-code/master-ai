@@ -1326,6 +1326,8 @@ export default function CoursePage() {
         amount={amount}
         courseTitle={course.title}
         courseThumbUrl={course.thumbnailUrl ?? null}
+        // ✅ NEW: server-side amount resolve хийхийн тулд courseId дамжуулна
+        courseId={courseId}
         onPaid={() => {
           setToast("✅ Төлбөр баталгаажлаа. Сургалт нээгдлээ!");
           setBuyOpen(false);

@@ -13,8 +13,15 @@ import { FieldValue } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
+// ✅ App Router caching хамгаалалт
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function noStoreJson(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate" },
+  });
 }
 
 function mustEnv(name: string) {
@@ -65,6 +72,25 @@ type Body = {
   senderInvoiceNo?: unknown;
 };
 
+function num(x: unknown) {
+  if (typeof x === "number") return x;
+  if (typeof x === "string" && x.trim()) return Number(x);
+  return NaN;
+}
+
+async function resolveAmountFromCourse(courseId: string) {
+  const db = getAdminDb();
+  const courseSnap = await db.collection("courses").doc(courseId).get();
+  if (!courseSnap.exists) return { ok: false as const, amount: null as any, error: "Course not found" };
+
+  const d = courseSnap.data() as any;
+  const price = typeof d?.price === "number" ? d.price : num(d?.price);
+  if (!Number.isFinite(price) || price <= 0) {
+    return { ok: false as const, amount: null as any, error: "Invalid course price" };
+  }
+  return { ok: true as const, amount: Math.round(price) };
+}
+
 export async function POST(req: Request) {
   try {
     const siteUrl = mustEnv("SITE_URL");
@@ -87,8 +113,25 @@ export async function POST(req: Request) {
 
     const courseId = String(json.courseId ?? "").trim() || null;
 
-    const amount = typeof json.amount === "string" ? Number(json.amount) : json.amount;
-    if (!isAmount(amount)) return noStoreJson({ error: "Invalid amount" }, 400);
+    // ✅ Amount source:
+    // - courseId байвал: Firestore -> course.price (server truth)
+    // - courseId байхгүй бол: client amount (backward compatible)
+    let resolvedAmount: number | null = null;
+    let amountSource: "course" | "client" = "client";
+
+    if (courseId) {
+      const ra = await resolveAmountFromCourse(courseId);
+      if (!ra.ok) return noStoreJson({ error: ra.error }, 400);
+      resolvedAmount = ra.amount;
+      amountSource = "course";
+    } else {
+      const a = typeof json.amount === "string" ? Number(json.amount) : json.amount;
+      if (!isAmount(a)) return noStoreJson({ error: "Invalid amount" }, 400);
+      resolvedAmount = a;
+      amountSource = "client";
+    }
+
+    const amount = resolvedAmount;
 
     const description = String(json.description ?? "Master AI payment").trim();
     if (description.length < 2 || description.length > 140) {
@@ -101,7 +144,7 @@ export async function POST(req: Request) {
     const snap = await invRef.get();
     const existing = snap.exists ? (snap.data() as any) : null;
 
-    const existingAmount = typeof existing?.amount === "number" ? existing.amount : null;
+    const existingAmount = typeof existing?.amount === "number" ? existing.amount : num(existing?.amount);
     const existingQpayInvoiceId = String(existing?.qpay?.qpayInvoiceId || "").trim();
     const existingQr = String(existing?.qpay?.qrImageDataUrl || "").trim();
     const existingUrls = Array.isArray(existing?.qpay?.urls) ? existing.qpay.urls : [];
@@ -123,6 +166,7 @@ export async function POST(req: Request) {
         urls: existingUrls,
         shortUrl: existing?.qpay?.shortUrl ?? null,
         amount,
+        amountSource,
         description,
         senderInvoiceNo: existing?.qpay?.senderInvoiceNo ?? null,
         orderId: existing?.qpay?.senderInvoiceNo ?? ref,
@@ -130,10 +174,13 @@ export async function POST(req: Request) {
       });
     }
 
-    // ✅ amount өөрчлөгдвөл шинэ invoice (150 -> 165 fix)
-    const senderInvoiceNoRaw = String(json.senderInvoiceNo ?? json.orderId ?? `${ref}-${amount}-${Date.now()}`);
+    // ✅ amount өөрчлөгдвөл шинэ invoice (safe idempotency)
+    const senderInvoiceNoRaw = String(
+      json.senderInvoiceNo ?? json.orderId ?? `${ref}-${amount}-${Date.now()}`
+    );
     const sender_invoice_no =
-      senderInvoiceNoRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || `${ref}-${Date.now()}`.slice(0, 40);
+      senderInvoiceNoRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) ||
+      `${ref}-${Date.now()}`.slice(0, 40);
 
     const orderId = String(json.orderId ?? sender_invoice_no).slice(0, 80);
 
@@ -196,6 +243,7 @@ export async function POST(req: Request) {
       urls,
       shortUrl,
       amount,
+      amountSource,
       description,
       senderInvoiceNo: sender_invoice_no,
       orderId,

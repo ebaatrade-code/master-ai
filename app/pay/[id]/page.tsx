@@ -109,6 +109,9 @@ export default function PayContinuePage() {
 
     return {
       ref,
+      // ✅ NEW: invoice дээр хадгалагдсан amount (QPayModal amountMismatch logic-д хэрэгтэй)
+      amount: typeof inv?.amount === "number" ? inv.amount : null,
+
       qrImageDataUrl: inv?.qpay?.qrImageDataUrl ?? null,
       shortUrl: inv?.qpay?.shortUrl ?? null,
       urls: Array.isArray(inv?.qpay?.urls) ? inv!.qpay!.urls : [],
@@ -162,6 +165,8 @@ export default function PayContinuePage() {
         amount={Number(inv?.amount ?? 0)}
         courseTitle={String(inv?.courseTitle || inv?.courseId || "Master AI")}
         courseThumbUrl={(inv?.courseThumbUrl as any) ?? null}
+        // ✅ NEW: server-side course.price resolve хийхийн тулд courseId дамжуулна
+        courseId={inv?.courseId ?? null}
         onPaid={() => {
           // paid болмогц history/мөр update болно (check route sync хийж байгаа)
           setOpen(false);

@@ -9,6 +9,9 @@ type Deeplink = { name?: string; description?: string; logo?: string; link: stri
 
 type QPayData = {
   ref: string; // invoices docId (invoiceId)
+  // ✅ OPTIONAL: invoices doc дээр хадгалагдсан amount байж болно
+  amount?: number | null;
+
   qrImageDataUrl?: string | null;
   qr_image?: string | null;
   shortUrl?: string | null;
@@ -64,6 +67,8 @@ export default function QPayModal({
   amount,
   courseTitle,
   courseThumbUrl,
+  // ✅ NEW (optional): courseId дамжуулж өгвөл сервер course.price-оос amount resolve хийнэ
+  courseId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -73,6 +78,8 @@ export default function QPayModal({
   amount: number;
   courseTitle: string;
   courseThumbUrl?: string | null;
+
+  courseId?: string | null;
 }) {
   const { user } = useAuth();
 
@@ -137,7 +144,9 @@ export default function QPayModal({
   }, [data?.urls, liveUrls]);
 
   // =========================
-  // ✅ SELF-HEAL: QR/data missing OR amount changed -> call create-invoice
+  // ✅ SELF-HEAL:
+  // - QR/data missing
+  // - OR invoice amount != UI amount  -> create-invoice (хуучин PENDING reuse асуудлыг шийднэ)
   // =========================
   const ensuringRef = useRef(false);
 
@@ -147,7 +156,14 @@ export default function QPayModal({
 
     const hasAnyBank = (Array.isArray(data?.urls) && data!.urls!.length > 0) || liveUrls.length > 0;
     const hasQr = !!qrSrc;
-    const shouldEnsure = !hasQr || !hasAnyBank; // QR байхгүй, эсвэл bank deeplink хоосон бол
+
+    // ✅ NEW: invoices doc дээр хадгалагдсан amount байвал UI amount-тай тулгана
+    const invoiceAmount =
+      typeof data?.amount === "number" && Number.isFinite(data.amount) ? data.amount : null;
+
+    const amountMismatch = invoiceAmount !== null && invoiceAmount !== amount;
+
+    const shouldEnsure = !hasQr || !hasAnyBank || amountMismatch;
 
     if (!shouldEnsure) return;
     if (ensuringRef.current) return;
@@ -168,11 +184,12 @@ export default function QPayModal({
           body: JSON.stringify({
             ref: data.ref,
             uid: user.uid,
-            // ✅ amount одоогийн UI дээрх дүнгээр заавал шинэчилнэ (150->165 fix)
+
+            // ✅ backwards compatible (server courseId байвал amount-ыг server талд resolve хийнэ)
             amount,
+            courseId: (courseId || undefined),
+
             description: `Master AI · ${courseTitle}`,
-            // courseId энд заавал байх албагүй (байвал сайн)
-            // courseId: (undefined)
           }),
         });
 
@@ -203,7 +220,7 @@ export default function QPayModal({
 
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, data?.ref, user, amount, courseTitle]);
+  }, [open, data?.ref, user, amount, courseTitle, courseId, qrSrc, liveUrls.length, data?.amount]);
 
   // =========================
   // ✅ Polling — unchanged (checks paid)
@@ -517,13 +534,13 @@ export default function QPayModal({
                 {lastErr ? <div className="mt-3 text-[13px] text-red-600">{lastErr}</div> : null}
 
                 <div className="mt-4">
-  <button
-    onClick={onClose}
-    className="w-full rounded-xl border border-black bg-white px-5 py-3 text-[15px] font-semibold text-black hover:bg-black/5 active:scale-[0.99] transition-all"
-  >
-    Ок
-  </button>
-</div>
+                  <button
+                    onClick={onClose}
+                    className="w-full rounded-xl border border-black bg-white px-5 py-3 text-[15px] font-semibold text-black hover:bg-black/5 active:scale-[0.99] transition-all"
+                  >
+                    Ок
+                  </button>
+                </div>
               </div>
 
               <div className="h-2" />

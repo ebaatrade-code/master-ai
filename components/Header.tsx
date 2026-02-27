@@ -758,34 +758,25 @@ function LoginDrawer({
 
   return (
     <div className="fixed inset-0 z-[99999]">
-     <button
-  aria-label="Close login"
-  onClick={onClose}
-  className={cn(
-    // ✅ softer dim + blur (цаад тал бүдэг)
-   "absolute inset-0 bg-black/60 backdrop-blur-[5px] transition-opacity duration-200",
-    mountedOpen ? "opacity-100" : "opacity-0"
-  )}
-/>
+      <button
+        aria-label="Close login"
+        onClick={onClose}
+        className={cn(
+          "absolute inset-0 bg-black/60 backdrop-blur-[5px] transition-opacity duration-200",
+          mountedOpen ? "opacity-100" : "opacity-0"
+        )}
+      />
 
       <div
-  className={cn(
-    // ✅ Floating position (4 талдаа зай гаргана)
-    "absolute right-4 top-4 bottom-4",
-
-    // ✅ Width хэвээр
-    "w-[calc(100%-2rem)] sm:w-[520px] md:w-[560px]",
-
-    // ✅ 4 талдаа бөөрөнхий
-    "bg-white rounded-[32px]",
-
-    // ✅ Premium border + shadow
-    "ring-1 ring-black/10",
-    "shadow-[0_50px_160px_rgba(0,0,0,0.28)]",
-
-    "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-    mountedOpen ? "translate-x-0" : "translate-x-[110%]"
-  )}
+        className={cn(
+          "absolute right-4 top-4 bottom-4",
+          "w-[calc(100%-2rem)] sm:w-[520px] md:w-[560px]",
+          "bg-white rounded-[32px]",
+          "ring-1 ring-black/10",
+          "shadow-[0_50px_160px_rgba(0,0,0,0.28)]",
+          "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          mountedOpen ? "translate-x-0" : "translate-x-[110%]"
+        )}
         role="dialog"
         aria-modal="true"
       >
@@ -833,14 +824,16 @@ export default function Header() {
     router.push("/");
   };
 
-  const isAdmin = role === "admin";
+  // ✅ HARDEN: admin зөвхөн (user + loading=false + role=admin) үед л
+  const isAdmin = !!user && !loading && role === "admin";
+
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [adminOpen, setAdminOpen] = useState(false);
   const adminRef = useRef<HTMLDivElement | null>(null);
 
   const unreadCount = useUnreadNotiCount(user?.uid);
-  const openReqCount = useOpenRequestsCount(!!user && isAdmin);
+  const openReqCount = useOpenRequestsCount(isAdmin);
 
   useEffect(() => {
     applyTheme("light");
@@ -858,6 +851,11 @@ export default function Header() {
   useEffect(() => {
     setAdminOpen(false);
   }, [pathname]);
+
+  // ✅ NEW: admin биш үед admin dropdown state-г force хаана (flash/hover үлдэхээс хамгаална)
+  useEffect(() => {
+    if (!isAdmin) setAdminOpen(false);
+  }, [isAdmin]);
 
   // ✅ login drawer state
   const [loginOpen, setLoginOpen] = useState(false);
@@ -922,7 +920,8 @@ export default function Header() {
               </Link>
             )}
 
-            {!loading && user && isAdmin && (
+            {/* ✅ ADMIN dropdown: хатуу шалгалттай */}
+            {isAdmin && (
               <div ref={adminRef} className="relative">
                 <button
                   type="button"
