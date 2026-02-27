@@ -317,14 +317,6 @@ function ProfileDropdown({
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [lang, setLang] = useState<Lang>("MN");
 
-  const initials = useMemo(() => {
-    const base = (displayName?.trim() || email || "U").trim();
-    const parts = base.split(" ").filter(Boolean);
-    const a = parts[0]?.[0] ?? "U";
-    const b = parts[1]?.[0] ?? "";
-    return (a + b).toUpperCase();
-  }, [displayName, email]);
-
   useEffect(() => {
     const t = getSavedTheme();
     const l = getSavedLang();
@@ -367,62 +359,94 @@ function ProfileDropdown({
   };
 
   const iconBox =
-    "grid h-10 w-10 place-items-center rounded-2xl bg-black/[0.03] ring-1 ring-black/10 group-hover:bg-black/[0.06] group-hover:ring-black/20 transition";
+    "grid h-10 w-10 place-items-center rounded-2xl bg-black/[0.03] ring-1 ring-black/10 " +
+    "group-hover:bg-black/[0.06] group-hover:ring-black/20 group-hover:shadow-[0_10px_26px_rgba(0,0,0,0.10)] transition";
   const itemRow =
-    "group flex items-center gap-3 px-4 py-3 text-[15px] font-extrabold text-black hover:bg-black/[0.04] transition";
+    "group flex items-center gap-3 px-4 py-3 text-[15px] font-extrabold text-black " +
+    "hover:bg-black/[0.04] active:bg-black/[0.06] transition";
 
   return (
     <div ref={ref} className="relative">
+      {/* ✅ Avatar trigger (YouTube-like) */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "relative flex items-center gap-2 rounded-full px-3 py-2 ring-1 transition",
-          "bg-white text-black hover:bg-black/[0.04] ring-black/70"
+          "relative inline-flex items-center justify-center rounded-full ring-1 transition",
+          "bg-white text-black hover:bg-black/[0.04] ring-black/70",
+          "h-10 w-10 p-0",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-black/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
         )}
         aria-haspopup="menu"
         aria-expanded={open}
       >
         <UnreadBadge count={unreadCount} className="-top-2 -right-2" />
 
-        <span
-          className={cn(
-            "relative h-8 w-8 overflow-hidden rounded-full ring-1",
-            "ring-black/70 bg-white"
-          )}
-        >
+        <span className="relative h-9 w-9 overflow-hidden rounded-full ring-1 ring-black/70 bg-white">
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
+            <img
+              src={avatarUrl}
+              alt="avatar"
+              className="h-full w-full object-cover"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
           ) : (
-            <span className="grid h-full w-full place-items-center text-xs font-extrabold text-black">
-              {initials}
+            <span className="grid h-full w-full place-items-center">
+              <IconUser className="h-5 w-5 text-black/70" />
             </span>
           )}
         </span>
-
-        <span className="hidden sm:block max-w-[150px] truncate font-extrabold text-black">
-          {displayName?.trim() ? displayName : "PROFILE"}
-        </span>
       </button>
 
+      {/* ✅ Premium scrim (сул overlay) */}
       {open && (
+        <button
+          aria-label="Close profile menu overlay"
+          className="fixed inset-0 z-[998] bg-black/[0.10] backdrop-blur-[2px]"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      {/* ✅ Modern dropdown: animate + caret + premium shadow */}
+      <div
+        className={cn(
+      "absolute right-0 mt-3 w-96 z-[999]",
+          "transition-all duration-200 ease-out",
+          open
+            ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
+            : "opacity-0 -translate-y-1 scale-[0.98] pointer-events-none"
+        )}
+        role="menu"
+        aria-hidden={!open}
+      >
+        {/* caret */}
+       <div className="absolute -top-2 right-6 h-4 w-4 rotate-45 bg-white border-2 border-black/15 shadow-[0_10px_30px_rgba(0,0,0,0.10)]" />
+
         <div
           className={cn(
-            "absolute right-0 mt-3 w-80 overflow-hidden rounded-3xl bg-white",
-            "border border-black/15 ring-1 ring-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.25)] z-[999]"
+            "relative overflow-hidden rounded-3xl bg-white",
+            "border border-black/15 ring-1 ring-black/10",
+            "shadow-[0_30px_110px_rgba(0,0,0,0.28)]"
           )}
-          role="menu"
         >
+          {/* top header */}
           <div className="px-5 pt-5 pb-4 border-b border-black/10">
             <div className="flex items-center gap-4">
               <span className="relative h-12 w-12 overflow-hidden rounded-3xl bg-white ring-1 ring-black/15">
                 {avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
+                  <img
+                    src={avatarUrl}
+                    alt="avatar"
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                  />
                 ) : (
-                  <span className="grid h-full w-full place-items-center text-sm font-extrabold text-black">
-                    {initials}
+                  <span className="grid h-full w-full place-items-center">
+                    <IconUser className="h-6 w-6 text-black/70" />
                   </span>
                 )}
               </span>
@@ -508,7 +532,7 @@ function ProfileDropdown({
                 onClick={toggleLang}
                 className={cn(
                   "w-full flex items-center justify-between rounded-2xl px-4 py-3",
-                  "bg-black/[0.03] hover:bg-black/[0.06] transition",
+                  "bg-black/[0.03] hover:bg-black/[0.06] active:bg-black/[0.08] transition",
                   "ring-1 ring-black/10 hover:ring-black/20"
                 )}
               >
@@ -526,7 +550,7 @@ function ProfileDropdown({
                 onClick={toggleTheme}
                 className={cn(
                   "w-full flex items-center justify-between rounded-2xl px-4 py-3",
-                  "bg-black/[0.03] hover:bg-black/[0.06] transition",
+                  "bg-black/[0.03] hover:bg-black/[0.06] active:bg-black/[0.08] transition",
                   "ring-1 ring-black/10 hover:ring-black/20"
                 )}
               >
@@ -541,7 +565,7 @@ function ProfileDropdown({
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

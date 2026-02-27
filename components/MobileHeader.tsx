@@ -251,8 +251,15 @@ export default function MobileHeader({
                   onLogout?.();
                   closeAll();
                 }}
-                className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black ring-1 ring-blue-400/30 active:scale-[0.99] md:bg-black md:text-white md:ring-white/10"
-              >
+                className="
+  mt-4 w-full rounded-xl
+  bg-red-500 text-white
+  px-4 py-3 text-sm font-semibold
+  shadow-[0_8px_25px_rgba(239,68,68,0.35)]
+  hover:bg-red-400
+  active:scale-[0.99]
+  transition
+">
                 Гарах
               </button>
             </>

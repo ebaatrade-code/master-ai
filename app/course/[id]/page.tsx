@@ -125,16 +125,21 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-extrabold text-black">{title}</div>
+        {/* ✅ Title: арай ТОД */}
+      <div className="text-sm font-black text-black/95 tracking-tight">
+          {title}
+        </div>
       </div>
 
-      <div className="mt-3 h-px w-full bg-black/10" />
+      {/* ✅ Divider: бага зэрэг сул */}
+      <div className="mt-4 h-px w-full bg-black/8" />
 
-      <ul className="mt-4 space-y-2 text-sm text-black/75">
+      {/* ✅ Items: БҮДЭГ */}
+      <ul className="mt-4 space-y-2 text-sm text-black/55">
         {items.map((t, i) => (
           <li key={i} className="flex gap-2">
-            <span className="mt-[2px] text-black/35">•</span>
-            <span>{t}</span>
+            <span className="mt-[2px] text-black/25">•</span>
+            <span className="leading-relaxed">{t}</span>
           </li>
         ))}
       </ul>
@@ -147,16 +152,21 @@ function MobileInfoBlock({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="rounded-none border-0 bg-transparent p-0">
       <div className="flex items-center justify-between">
-        <div className="text-sm font-extrabold text-black">{title}</div>
+        {/* ✅ Title: арай ТОД */}
+       <div className="text-[13px] sm:text-base font-black text-black tracking-[-0.02em] leading-snug">
+          {title}
+        </div>
       </div>
 
-      <div className="mt-3 h-px w-full bg-black/10" />
+      {/* ✅ Divider: бага зэрэг сул */}
+      <div className="mt-1 h-px w-full bg-black/8" />
 
-      <ul className="mt-4 space-y-2 text-sm text-black/75">
+      {/* ✅ Items: БҮДЭГ */}
+      <ul className="mt-4 space-y-3 text-sm text-black/45 text-[13px]">
         {items.map((t, i) => (
-          <li key={i} className="flex gap-2">
-            <span className="mt-[2px] text-black/35">•</span>
-            <span>{t}</span>
+          <li key={i} className="flex gap-3">
+            <span className="mt-[2px] text-black/25">•</span>
+            <span className="leading-relaxed">{t}</span>
           </li>
         ))}
       </ul>
@@ -1046,7 +1056,7 @@ export default function CoursePage() {
                   npTab === "content" ? "bg-black/5 text-black border border-black/10" : "text-black hover:text-black",
                 ].join(" ")}
               >
-                Хичээлийн агуулга
+              Хичээлүүд
               </button>
 
               <button
@@ -1087,10 +1097,10 @@ export default function CoursePage() {
                             ) : null}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-[12px] font-black text-black tracking-wide">
+                          <div className="line-clamp-2 whitespace-normal break-words text-[11px] font-black text-black tracking-[-0.03em] leading-tight">
                               {idx + 1}. {l.title}
                             </div>
-                            <div className="mt-1 line-clamp-1 text-xs text-black">
+                           <div className="mt-1 line-clamp-4 text-[11px] text-black/45">
                               {l.description?.trim() ? l.description : "Худалдаж авсны дараа энэ хичээл нээгдэнэ."}
                             </div>
                           </div>
@@ -1102,16 +1112,16 @@ export default function CoursePage() {
                   )}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-black/10 bg-white p-5 space-y-6 shadow-sm">
-                  <MobileInfoBlock
-                    title="Энэ сургалтанд ямар ямар хичээлүүд багтсан бэ?"
-                    items={whoForItems.length ? whoForItems : whoForFallback}
-                  />
-                  <MobileInfoBlock
-                    title="Та энэ сургалтыг авсанаар юу сурах вэ?"
-                    items={learnItems.length ? learnItems : learnFallback}
-                  />
-                </div>
+               <div className="rounded-2xl border border-black/20 bg-white p-5 space-y-6 shadow-[0_10px_30px_rgba(0,0,0,0.10)] ring-1 ring-black/5">
+  <MobileInfoBlock
+    title="Энэ сургалтанд ямар ямар хичээлүүд багтсан бэ?"
+    items={whoForItems.length ? whoForItems : whoForFallback}
+  />
+  <MobileInfoBlock
+    title="Та энэ сургалтыг авсанаар юу сурах вэ?"
+    items={learnItems.length ? learnItems : learnFallback}
+  />
+</div>
               )}
             </div>
           </div>
@@ -1215,7 +1225,7 @@ export default function CoursePage() {
                             </div>
 
                             {/* ✅ Description — Secondary / subdued */}
-                            <div className="mt-2 line-clamp-3 text-xs text-black leading-relaxed">
+                           <div className="mt-2 line-clamp-3 text-xs text-black/50 leading-relaxed">
                               {l.description?.trim() ? l.description : "Худалдаж авсны дараа энэ хичээл нээгдэнэ."}
                             </div>
                           </div>

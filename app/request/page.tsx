@@ -251,7 +251,7 @@ export default function RequestPage() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={6}
-              className="rounded-xl border border-black/10 bg-white px-3 py-2 text-black outline-none opacity-50"
+              className="rounded-xl border border-black/99 bg-white px-2 py-4 text-black outline-none opacity-50"
             
             />
             <div className={cn("text-xs", left < 0 ? "text-red-600" : "text-black")}>
