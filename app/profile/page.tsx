@@ -15,7 +15,11 @@ function formatISO(iso?: string) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("mn-MN", { year: "numeric", month: "2-digit", day: "2-digit" });
+  return d.toLocaleDateString("mn-MN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
 }
 
 function formatDateTime(value?: string) {
@@ -98,7 +102,12 @@ function IconMail({ className = "" }: { className?: string }) {
         strokeWidth="1.8"
         strokeLinejoin="round"
       />
-      <path d="M5.2 8.2 12 13.2l6.8-5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path
+        d="M5.2 8.2 12 13.2l6.8-5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -106,7 +115,12 @@ function IconMail({ className = "" }: { className?: string }) {
 function IconSpark({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path d="M13 2 3 14h8l-1 8 11-14h-8l0-6Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path
+        d="M13 2 3 14h8l-1 8 11-14h-8l0-6Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -170,9 +184,15 @@ export default function ProfilePage() {
     return formatDateTime(t);
   }, [user?.metadata?.lastSignInTime]);
 
-  const roleLabel = useMemo(() => (userDoc?.role === "admin" ? "Admin" : "Student"), [userDoc?.role]);
+  const roleLabel = useMemo(
+    () => (userDoc?.role === "admin" ? "Admin" : "Student"),
+    [userDoc?.role]
+  );
   const rank = useMemo(() => computeRank(purchasedCount), [purchasedCount]);
-  const accessStatus = useMemo(() => computeAccess(purchasedCount, userDoc?.role), [purchasedCount, userDoc?.role]);
+  const accessStatus = useMemo(
+    () => computeAccess(purchasedCount, userDoc?.role),
+    [purchasedCount, userDoc?.role]
+  );
 
   const progressPercent = useMemo(() => {
     if (!totalCourses || totalCourses <= 0) return 0;
@@ -297,14 +317,19 @@ export default function ProfilePage() {
 
   // ======== MOBILE helpers (Skool-like) ========
   const mobileHandle = useMemo(() => {
-    const base = (name?.trim() || email?.split("@")[0] || user?.uid?.slice(0, 6) || "user").toLowerCase();
+    const base = (
+      name?.trim() ||
+      email?.split("@")[0] ||
+      user?.uid?.slice(0, 6) ||
+      "user"
+    ).toLowerCase();
     return `@${base.replace(/\s+/g, "-")}`;
   }, [name, email, user?.uid]);
 
   return (
     <>
       {/* =========================================================
-          ✅ MOBILE (unchanged)
+          ✅ MOBILE (ONLY edited: removed the circled stats/progress blocks)
           ========================================================= */}
       <div className="md:hidden min-h-[calc(100vh-80px)] bg-white text-black">
         <div className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-black/10">
@@ -384,7 +409,9 @@ export default function ProfilePage() {
                 />
               </div>
 
-              <div className="mt-3 text-[22px] font-extrabold tracking-tight">{name?.trim() ? name : "PROFILE"}</div>
+              <div className="mt-3 text-[22px] font-extrabold tracking-tight">
+                {name?.trim() ? name : "PROFILE"}
+              </div>
               <div className="mt-0.5 text-[13px] text-black/55">{mobileHandle}</div>
               <div className="mt-2 text-[14px] text-black/70">{email || "—"}</div>
 
@@ -420,51 +447,11 @@ export default function ProfilePage() {
 
           <div className="my-5 border-t border-black/10" />
 
-          <div className="grid grid-cols-3 rounded-2xl border border-black/10 overflow-hidden bg-white">
-            <div className="py-4 text-center">
-              <div className="text-[20px] font-extrabold">{purchasedCount}</div>
-              <div className="text-[12px] text-black/55">Courses</div>
-            </div>
+          {/* ✅ REMOVED (MOBILE): Stats 3 columns + Progress card (circled area) */}
 
-            <div className="py-4 text-center border-l border-black/10">
-              <div className="text-[20px] font-extrabold">{fetchingStats ? "…" : `${progressPercent}%`}</div>
-              <div className="text-[12px] text-black/55">Progress</div>
-            </div>
-
-            <div className="py-4 text-center border-l border-black/10">
-              <div className="text-[20px] font-extrabold">{roleLabel}</div>
-              <div className="text-[12px] text-black/55">Role</div>
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
-            <div className="flex items-center justify-between text-[12px] text-black/60">
-              <span className="font-semibold">Нийт ахиц</span>
-              <span className="font-semibold text-black/70">{fetchingStats ? "…" : `${progressPercent}%`}</span>
-            </div>
-            <div className="mt-3 h-2 w-full rounded-full bg-black/10 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-[linear-gradient(90deg,#F4D27A,rgba(0,0,0,0.75))]"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <div className="mt-2 text-[12px] text-black/55">
-              Нийт курс: <span className="font-semibold text-black/80">{totalCourses ?? "…"}</span>
-              <span className="mx-2 text-black/20">•</span>
-              Access: <span className="font-semibold text-black/80">{accessStatus}</span>
-            </div>
-
-            <div className="mt-3 flex items-center gap-2 rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-[12px] text-black/70">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-black/10">
-                <IconSpark className="h-4 w-4 text-black/80" />
-              </span>
-              Өнөөдөр 10 минут үзвэл ахиц хамгийн хурдан нэмэгдэнэ.
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4 relative">
+          <div className="mt-6 rounded-2xl border border-black/50 bg-white p-4 relative">
             <div className="flex items-center justify-between">
-              <div className="text-[14px] font-semibold text-black">Хувийн мэдээлэл</div>
+              <div className="text-[15px] font-semibold text-black">Хувийн мэдээлэл</div>
 
               {!editing ? (
                 <button
@@ -535,7 +522,11 @@ export default function ProfilePage() {
                 <div className="mt-1 rounded-xl border border-black/10 bg-black/5">
                   <div className="flex items-center gap-2 px-3">
                     <IconMail className="h-4 w-4 text-black/50" />
-                    <input className="w-full h-11 outline-none text-[14px] bg-transparent" readOnly value={email} />
+                    <input
+                      className="w-full h-11 outline-none text-[14px] bg-transparent"
+                      readOnly
+                      value={email}
+                    />
                   </div>
                 </div>
               </div>
@@ -547,14 +538,16 @@ export default function ProfilePage() {
       </div>
 
       {/* =========================================================
-          ✅ DESKTOP (UPDATED to White stroke UI)
+          ✅ DESKTOP (DO NOT TOUCH)
           ========================================================= */}
       <div className="hidden md:block bg-white text-black">
         <div className="min-h-screen bg-white text-black">
           <div className="mx-auto max-w-5xl px-5 py-10">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-black">Профайл</h1>
+                <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-black">
+                  Профайл
+                </h1>
               </div>
             </div>
 
@@ -573,9 +566,11 @@ export default function ProfilePage() {
 
             <section className={sectionCls}>
               <div className="flex flex-wrap items-center justify-between gap-3">
-
                 {!editing ? (
-                  <button onClick={() => setEditing(true)} className={cn(goldBtn, "inline-flex items-center gap-2")}>
+                  <button
+                    onClick={() => setEditing(true)}
+                    className={cn(goldBtn, "inline-flex items-center gap-2")}
+                  >
                     <IconPencil className="h-4 w-4 text-black" />
                     Засах
                   </button>
@@ -797,12 +792,16 @@ export default function ProfilePage() {
               <div className="mt-5 grid gap-3 md:grid-cols-3">
                 <div className={cn("px-4 py-4", inner)}>
                   <div className="text-xs text-black/55 font-bold">Status</div>
-                  <div className="mt-2 text-lg font-extrabold text-black">{accountStatusLabel(userDoc?.accountStatus)}</div>
+                  <div className="mt-2 text-lg font-extrabold text-black">
+                    {accountStatusLabel(userDoc?.accountStatus)}
+                  </div>
                 </div>
 
                 <div className={cn("px-4 py-4", inner)}>
                   <div className="text-xs text-black/55 font-bold">Auth method</div>
-                  <div className="mt-2 text-lg font-extrabold text-black">{authMethodLabel(userDoc?.authMethod)}</div>
+                  <div className="mt-2 text-lg font-extrabold text-black">
+                    {authMethodLabel(userDoc?.authMethod)}
+                  </div>
                 </div>
 
                 <div className={cn("px-4 py-4", inner)}>

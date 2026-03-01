@@ -37,7 +37,11 @@ function formatJoined(v: any) {
             : null;
 
     if (!d || Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString("mn-MN", { year: "numeric", month: "short", day: "numeric" });
+    return d.toLocaleDateString("mn-MN", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
   } catch {
     return "—";
   }
@@ -171,7 +175,9 @@ export default function MobileProfile() {
               </div>
             </div>
 
-            <div className="mt-3 text-[22px] font-extrabold tracking-tight">{displayName}</div>
+            <div className="mt-3 text-[22px] font-extrabold tracking-tight">
+              {displayName}
+            </div>
             <div className="mt-0.5 text-[13px] text-black/55">{handleRaw}</div>
 
             {bio ? (
@@ -211,26 +217,6 @@ export default function MobileProfile() {
 
         <div className="my-5 border-t border-black/10" />
 
-        {/* Stats (Skool style 3 columns) */}
-        <div className="grid grid-cols-3 rounded-2xl border border-black/10 overflow-hidden bg-white">
-          <div className="py-4 text-center">
-            <div className="text-[20px] font-extrabold">{purchasedCount}</div>
-            <div className="text-[12px] text-black/55">Courses</div>
-          </div>
-
-          <div className="py-4 text-center border-l border-black/10">
-            <div className="text-[20px] font-extrabold">0%</div>
-            <div className="text-[12px] text-black/55">Progress</div>
-          </div>
-
-          <div className="py-4 text-center border-l border-black/10">
-            <div className="text-[20px] font-extrabold">
-              {(dbUser?.role || "student").toString().toUpperCase()}
-            </div>
-            <div className="text-[12px] text-black/55">Role</div>
-          </div>
-        </div>
-
         {/* Quick actions */}
         <div className="mt-5 grid grid-cols-2 gap-3">
           <button
@@ -246,15 +232,17 @@ export default function MobileProfile() {
             Бүх курс
           </button>
         </div>
-{/* Purchases History (NEW) */}
-<div className="mt-3">
-  <button
-    onClick={() => router.push("/profile/purchases")}
-    className="w-full h-11 rounded-xl border border-black/10 bg-white font-semibold text-[14px] active:scale-[0.99]"
-  >
-    Худалдан авалтын түүх
-  </button>
-</div>
+
+        {/* Purchases History (NEW) */}
+        <div className="mt-3">
+          <button
+            onClick={() => router.push("/profile/purchases")}
+            className="w-full h-11 rounded-xl border border-black/10 bg-white font-semibold text-[14px] active:scale-[0.99]"
+          >
+            Худалдан авалтын түүх
+          </button>
+        </div>
+
         {/* Safe bottom padding */}
         <div className="h-8" />
       </div>

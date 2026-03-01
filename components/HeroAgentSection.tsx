@@ -11,8 +11,8 @@ type Props = {
 };
 
 const SLIDES = [
-  "/hero/slide-1-v2.jpg",
-  "/hero/slide-2-v2.jpg",
+  "/hero/slide-1-v2.png",
+  "/hero/slide-2-v2.png",
   "/hero/slide-3-v2.jpg",
   "/hero/slide-4-v2.jpg",
 ];

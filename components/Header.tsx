@@ -130,7 +130,8 @@ function UnreadBadge({
   return (
     <span
       className={cn(
-        "absolute -top-2 -right-2",
+        // ✅ FIX: ensure on top of avatar
+        "absolute -top-2 -right-2 z-[30] pointer-events-none",
         "inline-flex min-w-[22px] h-[22px] items-center justify-center",
         "rounded-full bg-red-500 text-white text-[11px] font-black",
         "px-1.5 shadow-[0_4px_12px_rgba(239,68,68,0.6)]",
@@ -372,7 +373,9 @@ function ProfileDropdown({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "relative inline-flex items-center justify-center rounded-full ring-1 transition",
+          // ✅ FIX: wrapper creates stacking context + allows badge overflow
+          "relative overflow-visible",
+          "inline-flex items-center justify-center rounded-full ring-1 transition",
           "bg-white text-black hover:bg-black/[0.04] ring-black/70",
           "h-10 w-10 p-0",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-black/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
@@ -380,9 +383,11 @@ function ProfileDropdown({
         aria-haspopup="menu"
         aria-expanded={open}
       >
+        {/* ✅ FIX: badge on top of everything */}
         <UnreadBadge count={unreadCount} className="-top-2 -right-2" />
 
-        <span className="relative h-9 w-9 overflow-hidden rounded-full ring-1 ring-black/70 bg-white">
+        {/* ✅ FIX: avatar content stays below badge */}
+        <span className="relative z-0 h-9 w-9 overflow-hidden rounded-full ring-1 ring-black/70 bg-white">
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -412,7 +417,7 @@ function ProfileDropdown({
       {/* ✅ Modern dropdown: animate + caret + premium shadow */}
       <div
         className={cn(
-      "absolute right-0 mt-3 w-96 z-[999]",
+          "absolute right-0 mt-3 w-96 z-[999]",
           "transition-all duration-200 ease-out",
           open
             ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
@@ -422,7 +427,7 @@ function ProfileDropdown({
         aria-hidden={!open}
       >
         {/* caret */}
-       <div className="absolute -top-2 right-6 h-4 w-4 rotate-45 bg-white border-2 border-black/15 shadow-[0_10px_30px_rgba(0,0,0,0.10)]" />
+        <div className="absolute -top-2 right-6 h-4 w-4 rotate-45 bg-white border-2 border-black/15 shadow-[0_10px_30px_rgba(0,0,0,0.10)]" />
 
         <div
           className={cn(
@@ -460,7 +465,12 @@ function ProfileDropdown({
             </div>
           </div>
 
-          <Link href="/profile" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
+          <Link
+            href="/profile"
+            onClick={() => setOpen(false)}
+            className={itemRow}
+            role="menuitem"
+          >
             <span className={iconBox}>
               <IconUser className="h-5 w-5 text-black/90" />
             </span>
@@ -504,7 +514,12 @@ function ProfileDropdown({
             Асуудал шийдүүлэх
           </Link>
 
-          <Link href="/settings" onClick={() => setOpen(false)} className={itemRow} role="menuitem">
+          <Link
+            href="/settings"
+            onClick={() => setOpen(false)}
+            className={itemRow}
+            role="menuitem"
+          >
             <span className={iconBox}>
               <IconSettings className="h-5 w-5 text-black/90" />
             </span>

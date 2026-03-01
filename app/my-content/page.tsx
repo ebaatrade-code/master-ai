@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   query,
   where,
@@ -38,6 +40,31 @@ function chunk<T>(arr: T[], size: number) {
 
 function clamp(n: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, n));
+}
+
+// ✅ Timestamp/string/date -> ms helper
+function tsToMs(x: any): number | null {
+  try {
+    if (!x) return null;
+    if (typeof x === "number" && Number.isFinite(x)) return x;
+    if (typeof x === "string") {
+      const d = new Date(x);
+      const ms = d.getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof x?.toMillis === "function") {
+      const ms = x.toMillis();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof x?.toDate === "function") {
+      const d = x.toDate();
+      const ms = d?.getTime?.();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /** ✅ Wide premium card */
@@ -140,10 +167,15 @@ export default function MyContentPage() {
   const router = useRouter();
   const { user, loading, purchasedCourseIds } = useAuth();
 
-  const ids = useMemo(
+  // ✅ AuthProvider-аас ирсэн raw ids
+  const rawIds = useMemo(
     () => (purchasedCourseIds ?? []).filter(Boolean),
     [purchasedCourseIds]
   );
+
+  // ✅ Expired-үүдийг хассан ACTIVE ids
+  const [ids, setIds] = useState<string[]>([]);
+  const [expiryChecked, setExpiryChecked] = useState(false);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [fetching, setFetching] = useState(false);
@@ -162,8 +194,53 @@ export default function MyContentPage() {
       );
   }, [loading, user, router]);
 
+  // ✅ “Миний сургалтууд”-аас хугацаа дууссан курсийг автоматаар хасна
   useEffect(() => {
     if (loading || !user) return;
+
+    const run = async () => {
+      setExpiryChecked(false);
+
+      // rawIds хоосон бол шууд reset
+      if (rawIds.length === 0) {
+        setIds([]);
+        setExpiryChecked(true);
+        return;
+      }
+
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const data = snap.exists() ? (snap.data() as any) : null;
+        const purchases = data?.purchases ?? {};
+
+        const now = Date.now();
+        const active: string[] = [];
+
+        for (const courseId of rawIds) {
+          const p = purchases?.[courseId] ?? null;
+          const expMs = tsToMs(p?.expiresAt);
+
+          // ✅ expMs байгаа бөгөөд хугацаа нь өнгөрсөн бол ACTIVE-д оруулахгүй
+          if (expMs && now > expMs) continue;
+
+          active.push(courseId);
+        }
+
+        setIds(active);
+      } catch {
+        // ⚠️ Алдаа гарвал “хасах” биш “үзүүлэх” нь илүү safe
+        setIds(rawIds);
+      } finally {
+        setExpiryChecked(true);
+      }
+    };
+
+    run();
+  }, [loading, user, rawIds]);
+
+  useEffect(() => {
+    if (loading || !user) return;
+    if (!expiryChecked) return;
 
     const run = async () => {
       setFetching(true);
@@ -206,7 +283,7 @@ export default function MyContentPage() {
     };
 
     run();
-  }, [loading, user, ids]);
+  }, [loading, user, ids, expiryChecked]);
 
   useEffect(() => {
     if (!user) return;

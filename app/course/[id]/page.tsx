@@ -125,16 +125,11 @@ function InfoBlock({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
-        {/* ✅ Title: арай ТОД */}
-      <div className="text-sm font-black text-black/95 tracking-tight">
-          {title}
-        </div>
+        <div className="text-sm font-black text-black/95 tracking-tight">{title}</div>
       </div>
 
-      {/* ✅ Divider: бага зэрэг сул */}
       <div className="mt-4 h-px w-full bg-black/8" />
 
-      {/* ✅ Items: БҮДЭГ */}
       <ul className="mt-4 space-y-2 text-sm text-black/55">
         {items.map((t, i) => (
           <li key={i} className="flex gap-2">
@@ -152,16 +147,13 @@ function MobileInfoBlock({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="rounded-none border-0 bg-transparent p-0">
       <div className="flex items-center justify-between">
-        {/* ✅ Title: арай ТОД */}
-       <div className="text-[13px] sm:text-base font-black text-black tracking-[-0.02em] leading-snug">
+        <div className="text-[13px] sm:text-base font-black text-black tracking-[-0.02em] leading-snug">
           {title}
         </div>
       </div>
 
-      {/* ✅ Divider: бага зэрэг сул */}
       <div className="mt-1 h-px w-full bg-black/8" />
 
-      {/* ✅ Items: БҮДЭГ */}
       <ul className="mt-4 space-y-3 text-sm text-black/45 text-[13px]">
         {items.map((t, i) => (
           <li key={i} className="flex gap-3">
@@ -287,6 +279,9 @@ export default function CoursePage() {
   const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
   const [isExpired, setIsExpired] = useState(false);
 
+  // ✅ expired үед "үзэх эрхгүй" гэж үзнэ
+  const canAccess = isPurchased && !isExpired;
+
   // ✅ QPAY MODAL (single)
   const [buyOpen, setBuyOpen] = useState(false);
   const [qpayData, setQpayData] = useState<{
@@ -296,7 +291,6 @@ export default function CoursePage() {
     shortUrl?: string | null;
     urls?: Deeplink[];
 
-    // ✅ NEW: Duration to show in modal instead of "Контент"
     durationLabel?: string | null;
     durationDays?: number | null;
   } | null>(null);
@@ -318,7 +312,6 @@ export default function CoursePage() {
       return;
     }
 
-    // ✅ NEW: modal дээр харуулах хугацааг эндээс тодорхойлно
     const modalDurationLabel =
       String(course?.durationLabel ?? "").trim() ||
       String(course?.duration ?? "").trim() ||
@@ -356,7 +349,6 @@ export default function CoursePage() {
         return;
       }
 
-      // ✅ API return: invoiceDocId, qrImageDataUrl, shortUrl, urls
       const ref = String(data?.invoiceDocId || "").trim();
       if (!ref) {
         setToast("invoiceDocId олдсонгүй. API response-оо шалгаарай.");
@@ -368,8 +360,6 @@ export default function CoursePage() {
         qrImageDataUrl: data?.qrImageDataUrl ?? null,
         shortUrl: data?.shortUrl ?? null,
         urls: Array.isArray(data?.urls) ? (data.urls as Deeplink[]) : [],
-
-        // ✅ NEW: pass duration to QPayModal
         durationLabel: modalDurationLabel,
         durationDays: modalDurationDays,
       });
@@ -458,7 +448,6 @@ export default function CoursePage() {
         const purchasedMs = tsToMs(p?.purchasedAt);
         const expMsRaw = tsToMs(p?.expiresAt);
 
-        // durationDays: purchase дээр байвал тэрийг, байхгүй бол course дээрхийг ашиглана
         const ddFromPurchase = Number(p?.durationDays);
         const ddFromCourse = Number(course?.durationDays);
         const durationDays =
@@ -466,15 +455,11 @@ export default function CoursePage() {
           (Number.isFinite(ddFromCourse) && ddFromCourse > 0 ? ddFromCourse : null) ??
           30;
 
-        // ✅ RULE:
-        // 1) expiresAt байхгүй -> purchasedAt + durationDays
-        // 2) expiresAt < purchasedAt -> purchasedAt + durationDays (self-heal)
         let finalExpMs: number | null = expMsRaw ?? null;
 
         if (purchasedMs && (!finalExpMs || (finalExpMs && finalExpMs < purchasedMs))) {
           finalExpMs = purchasedMs + durationDays * 24 * 60 * 60 * 1000;
 
-          // ✅ best-effort self-heal write (өөрийн user doc-оо засна)
           try {
             await updateDoc(doc(db, "users", user.uid), {
               [`purchases.${courseId}.expiresAt`]: Timestamp.fromMillis(finalExpMs),
@@ -482,7 +467,7 @@ export default function CoursePage() {
               [`purchases.${courseId}.updatedAt`]: serverTimestamp(),
             });
           } catch {
-            // rules зөвшөөрөхгүй бол дуугүй өнгөрнө (UI дээр зөв харагдана)
+            // silent
           }
         }
 
@@ -517,10 +502,17 @@ export default function CoursePage() {
     return () => clearTimeout(t);
   }, [expiresAtMs]);
 
+  // ✅ (REMOVED) EXPIRED болсон үед автоматаар QPay нээх логик
+  // Хугацаа дууссан курс рүү "Миний сургалтуудаас" ороход шууд QPay руу үсэрдэг асуудлын гол шалтгаан байсан.
+
+  const saveProgressGuarded = async (lessonId: string, nextSec: number) => {
+    if (!canAccess) return;
+    await saveProgress(lessonId, nextSec);
+  };
+
   useEffect(() => {
     const run = async () => {
-      if (!isPurchased) return;
-      if (isExpired) return;
+      if (!canAccess) return;
       if (!user?.uid) return;
       if (!progressDocRef) return;
 
@@ -552,14 +544,13 @@ export default function CoursePage() {
     };
 
     run();
-  }, [isPurchased, isExpired, user?.uid, progressDocRef]);
+  }, [canAccess, user?.uid, progressDocRef]);
 
   useEffect(() => {
     const run = async () => {
       setVideoSrc(null);
 
-      if (!isPurchased) return;
-      if (isExpired) return;
+      if (!canAccess) return;
       if (!selectedLessonId) return;
 
       const lesson = lessons.find((l) => l.id === selectedLessonId);
@@ -590,11 +581,10 @@ export default function CoursePage() {
     };
 
     run();
-  }, [selectedLessonId, lessons, isPurchased, isExpired]);
+  }, [selectedLessonId, lessons, canAccess]);
 
   useEffect(() => {
-    if (!isPurchased) return;
-    if (isExpired) return;
+    if (!canAccess) return;
     if (!lessons.length) return;
 
     const pct = calcCoursePercentFromMap({
@@ -603,7 +593,7 @@ export default function CoursePage() {
       fallbackDurationSec: 300,
     });
     setCoursePercent(pct);
-  }, [isPurchased, isExpired, lessons, byLessonSec]);
+  }, [canAccess, lessons, byLessonSec]);
 
   if (fetching) {
     return (
@@ -639,61 +629,9 @@ export default function CoursePage() {
   ];
 
   // =========================================================
-  // ✅ PURCHASED VIEW (ХЭВЭЭР) — Mobile-only small tweaks
+  // ✅ PURCHASED VIEW (зөвхөн access хүчинтэй үед)
   // =========================================================
-  if (isPurchased) {
-    if (isExpired) {
-      return (
-        <div className="lesson-viewer min-h-[calc(100vh-80px)]">
-          <div className="relative mx-auto max-w-5xl px-6 pt-10 pb-16">
-            <div className="flex justify-center">
-              <div className="w-full max-w-3xl px-6 py-2 text-center">
-                <div className="text-2xl sm:text-3xl font-extrabold tracking-wide text-black">
-                  {course.title}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-center">
-              <div className="w-full max-w-3xl rounded-2xl border border-red-400/25 bg-black/20 p-6">
-                <div className="text-lg font-extrabold text-black">⛔ Сургалтын хугацаа дууссан байна</div>
-
-                <div className="mt-2 text-sm text-black">
-                  Хугацаа: <span className="text-black font-semibold">{durationLabel}</span>
-                </div>
-
-                {expiresAtMs ? (
-                  <div className="mt-1 text-sm text-black">
-                    Дууссан огноо: <span className="text-black">{formatExpiresText(expiresAtMs)}</span>
-                  </div>
-                ) : null}
-
-                <div className="mt-4 text-sm text-black">
-                  Та дахин идэвхжүүлэх бол “Худалдаж авах” хэсгээс шинэ хугацаатайгаар авна.
-                </div>
-
-                <div className="mt-6">
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/course/${courseId}`)}
-                    className="rounded-full px-6 py-3 text-sm font-extrabold tracking-wide border border-white/12 bg-white/5 hover:bg-white/10 text-black"
-                  >
-                    Буцах →{" "}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {toast ? (
-              <div className="fixed right-4 top-4 z-[60] rounded-xl border border-white/10 bg-black/70 px-4 py-2 text-sm text-black backdrop-blur">
-                {toast}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      );
-    }
-
+  if (canAccess) {
     return (
       <div className="lesson-viewer min-h-[calc(100vh-80px)]">
         <div className="relative mx-auto max-w-5xl px-6 pt-10 pb-16">
@@ -734,10 +672,8 @@ export default function CoursePage() {
           <div className="mt-6 flex justify-center">
             <div className="w-full max-w-3xl rounded-2xl border border-amber-300/25 bg-black/20 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.40)]">
               <div className="mb-3 flex items-center justify-between">
-                {/* ✅ MOBILE жижиг, md+ дээр хуучин хэвээр */}
                 <div className="text-[12px] md:text-sm font-semibold text-black">Видео үзэх</div>
 
-                {/* ✅ MOBILE жижиг, md+ дээр хуучин хэвээр */}
                 <div className="text-[11px] md:text-xs flex items-center gap-2">
                   <span className="rounded-full border border-emerald-300/25 bg-emerald-500/10 px-2 md:px-3 py-0.5 md:py-1 text-black">
                     ХУГАЦАА: {durationLabel}
@@ -788,7 +724,7 @@ export default function CoursePage() {
                       const prev = Number(byLessonSec?.[selectedLessonId] ?? 0);
                       const next = Math.max(prev, t);
 
-                      await saveProgress(selectedLessonId, next);
+                      await saveProgressGuarded(selectedLessonId, next);
                     }}
                     onEnded={async (e) => {
                       if (!selectedLessonId) return;
@@ -801,7 +737,7 @@ export default function CoursePage() {
                       const next = Math.max(prev, dur);
 
                       lastSaveRef.current = Date.now();
-                      await saveProgress(selectedLessonId, next);
+                      await saveProgressGuarded(selectedLessonId, next);
                     }}
                     onPause={async (e) => {
                       if (!selectedLessonId) return;
@@ -813,7 +749,7 @@ export default function CoursePage() {
 
                       if (next <= prev) return;
                       lastSaveRef.current = Date.now();
-                      await saveProgress(selectedLessonId, next);
+                      await saveProgressGuarded(selectedLessonId, next);
                     }}
                   />
                 </div>
@@ -868,7 +804,9 @@ export default function CoursePage() {
                       {selectedLesson ? (
                         <>
                           {lessons.findIndex((x) => x.id === selectedLesson.id) + 1}.{" "}
-                          <span className="text-black font-extrabold tracking-wide">{selectedLesson.title}</span>
+                          <span className="text-black font-extrabold tracking-wide">
+                            {selectedLesson.title}
+                          </span>
                         </>
                       ) : (
                         <span className="text-black">Хичээл сонгоогүй байна.</span>
@@ -911,7 +849,6 @@ export default function CoursePage() {
                               ].join(" ")}
                             >
                               <div className="flex items-center gap-3 px-3 py-3">
-                                {/* ✅ MOBILE-д thumbnail (md+ дээр нуусан) */}
                                 <div className="md:hidden h-10 w-14 shrink-0 overflow-hidden rounded-xl border border-black/10 bg-black/5">
                                   {course.thumbnailUrl ? (
                                     <img
@@ -923,14 +860,12 @@ export default function CoursePage() {
                                   ) : null}
                                 </div>
 
-                                {/* ✅ Title + subtitle */}
                                 <div className="min-w-0 flex-1">
                                   <div className="text-[11px] sm:text-[14px] md:text-[16px] font-black text-black tracking-[0.02em] leading-snug whitespace-normal break-words md:truncate md:whitespace-nowrap">
                                     {idx + 1}. {l.title}
                                   </div>
                                 </div>
 
-                                {/* ✅ Right side: completed + duration */}
                                 <div className="shrink-0 flex items-center gap-2">
                                   {completed ? (
                                     <div className="hidden sm:flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-black">
@@ -968,11 +903,11 @@ export default function CoursePage() {
   }
 
   // =========================================================
-  // ✅ NOT PURCHASED VIEW
+  // ✅ NOT PURCHASED VIEW (Мөн expired үед энд орно)
   // =========================================================
   return (
     <>
-      {/* MOBILE (аль хэдийн цагаан байсан — хэвээр) */}
+      {/* MOBILE */}
       <div className="lg:hidden min-h-[calc(100vh-80px)] bg-white text-black overflow-x-hidden">
         <div className="mx-auto max-w-6xl px-6 pt-8 pb-12">
           {course.thumbnailUrl ? (
@@ -1056,7 +991,7 @@ export default function CoursePage() {
                   npTab === "content" ? "bg-black/5 text-black border border-black/10" : "text-black hover:text-black",
                 ].join(" ")}
               >
-              Хичээлүүд
+                Хичээлүүд
               </button>
 
               <button
@@ -1097,10 +1032,10 @@ export default function CoursePage() {
                             ) : null}
                           </div>
                           <div className="min-w-0 flex-1">
-                          <div className="line-clamp-2 whitespace-normal break-words text-[11px] font-black text-black tracking-[-0.03em] leading-tight">
+                            <div className="line-clamp-2 whitespace-normal break-words text-[11px] font-black text-black tracking-[-0.03em] leading-tight">
                               {idx + 1}. {l.title}
                             </div>
-                           <div className="mt-1 line-clamp-4 text-[11px] text-black/45">
+                            <div className="mt-1 line-clamp-4 text-[11px] text-black/45">
                               {l.description?.trim() ? l.description : "Худалдаж авсны дараа энэ хичээл нээгдэнэ."}
                             </div>
                           </div>
@@ -1112,16 +1047,16 @@ export default function CoursePage() {
                   )}
                 </div>
               ) : (
-               <div className="rounded-2xl border border-black/20 bg-white p-5 space-y-6 shadow-[0_10px_30px_rgba(0,0,0,0.10)] ring-1 ring-black/5">
-  <MobileInfoBlock
-    title="Энэ сургалтанд ямар ямар хичээлүүд багтсан бэ?"
-    items={whoForItems.length ? whoForItems : whoForFallback}
-  />
-  <MobileInfoBlock
-    title="Та энэ сургалтыг авсанаар юу сурах вэ?"
-    items={learnItems.length ? learnItems : learnFallback}
-  />
-</div>
+                <div className="rounded-2xl border border-black/20 bg-white p-5 space-y-6 shadow-[0_10px_30px_rgba(0,0,0,0.10)] ring-1 ring-black/5">
+                  <MobileInfoBlock
+                    title="Энэ сургалтанд ямар ямар хичээлүүд багтсан бэ?"
+                    items={whoForItems.length ? whoForItems : whoForFallback}
+                  />
+                  <MobileInfoBlock
+                    title="Та энэ сургалтыг авсанаар юу сурах вэ?"
+                    items={learnItems.length ? learnItems : learnFallback}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -1134,7 +1069,7 @@ export default function CoursePage() {
         </div>
       </div>
 
-      {/* DESKTOP — ✅ ЦАГААН БОЛГОСОН */}
+      {/* DESKTOP */}
       <div className="hidden lg:block min-h-[calc(100vh-80px)] bg-white text-black overflow-x-hidden">
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden lg:block">
           <div className="absolute inset-0 bg-[radial-gradient(900px_500px_at_50%_0%,rgba(0,140,255,0.10),transparent_60%)]" />
@@ -1154,7 +1089,11 @@ export default function CoursePage() {
                     className="absolute inset-0 h-full w-full object-cover blur-3xl scale-125 opacity-35"
                   />
                   <div className="absolute inset-0 bg-white/55" />
-                  <img src={course.thumbnailUrl} alt={course.title} className="relative z-10 h-full w-full object-contain" />
+                  <img
+                    src={course.thumbnailUrl}
+                    alt={course.title}
+                    className="relative z-10 h-full w-full object-contain"
+                  />
                 </div>
               </div>
             ) : null}
@@ -1216,7 +1155,6 @@ export default function CoursePage() {
                           </div>
 
                           <div className="min-w-0 flex-1">
-                            {/* ✅ Title — Primary emphasis */}
                             <div
                               className="truncate text-[12px] !font-black !text-black tracking-[0.01em]"
                               style={{ fontWeight: 800 }}
@@ -1224,8 +1162,7 @@ export default function CoursePage() {
                               {idx + 1}. {l.title}
                             </div>
 
-                            {/* ✅ Description — Secondary / subdued */}
-                           <div className="mt-2 line-clamp-3 text-xs text-black/50 leading-relaxed">
+                            <div className="mt-2 line-clamp-3 text-xs text-black/50 leading-relaxed">
                               {l.description?.trim() ? l.description : "Худалдаж авсны дараа энэ хичээл нээгдэнэ."}
                             </div>
                           </div>
@@ -1336,11 +1273,15 @@ export default function CoursePage() {
         amount={amount}
         courseTitle={course.title}
         courseThumbUrl={course.thumbnailUrl ?? null}
-        // ✅ NEW: server-side amount resolve хийхийн тулд courseId дамжуулна
         courseId={courseId}
         onPaid={() => {
           setToast("✅ Төлбөр баталгаажлаа. Сургалт нээгдлээ!");
           setBuyOpen(false);
+
+          // ✅ PAID болмогц expired төлөвийг шууд болиулж,
+          // UI нь "үзэх" view рүү эргээд орох боломжтой болгоно
+          setIsExpired(false);
+
           router.refresh();
         }}
       />
