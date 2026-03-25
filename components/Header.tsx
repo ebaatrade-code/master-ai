@@ -130,7 +130,6 @@ function UnreadBadge({
   return (
     <span
       className={cn(
-        // ✅ FIX: ensure on top of avatar
         "absolute -top-2 -right-2 z-[30] pointer-events-none",
         "inline-flex min-w-[22px] h-[22px] items-center justify-center",
         "rounded-full bg-red-500 text-white text-[11px] font-black",
@@ -155,6 +154,25 @@ function IconUser({ className = "" }: { className?: string }) {
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconProfileModern({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+      <path
+        d="M12 12.2a3.15 3.15 0 1 0-3.15-3.15A3.15 3.15 0 0 0 12 12.2Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M6.9 17.7c1.1-2.05 3.03-3.1 5.1-3.1 2.07 0 4 1.05 5.1 3.1"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
       />
     </svg>
   );
@@ -295,20 +313,35 @@ function IconHelp({ className = "" }: { className?: string }) {
 }
 
 /* =========================
+   Modern Profile Avatar (icon only)
+========================= */
+function ProfileAvatarIcon({
+  className = "",
+  iconClassName = "",
+}: {
+  className?: string;
+  iconClassName?: string;
+}) {
+  return (
+    <span className={cn("grid place-items-center", className)}>
+      <IconProfileModern className={cn("text-black", iconClassName)} />
+    </span>
+  );
+}
+
+/* =========================
    Profile Dropdown (desktop) — WHITE THEME
 ========================= */
 function ProfileDropdown({
   uid,
   email,
   displayName,
-  avatarUrl,
   onLogout,
   unreadCount,
 }: {
   uid: string;
   email: string;
   displayName?: string;
-  avatarUrl?: string;
   onLogout: () => Promise<void> | void;
   unreadCount: number;
 }) {
@@ -368,44 +401,27 @@ function ProfileDropdown({
 
   return (
     <div ref={ref} className="relative">
-      {/* ✅ Avatar trigger (YouTube-like) */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          // ✅ FIX: wrapper creates stacking context + allows badge overflow
           "relative overflow-visible",
-          "inline-flex items-center justify-center rounded-full ring-1 transition",
-          "bg-white text-black hover:bg-black/[0.04] ring-black/70",
+          "inline-flex items-center justify-center transition",
+          "text-black",
           "h-10 w-10 p-0",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-black/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          "focus:outline-none"
         )}
+        aria-label="Open profile menu"
         aria-haspopup="menu"
-        aria-expanded={open}
+        aria-expanded={open ? "true" : "false"}
       >
-        {/* ✅ FIX: badge on top of everything */}
         <UnreadBadge count={unreadCount} className="-top-2 -right-2" />
 
-        {/* ✅ FIX: avatar content stays below badge */}
-        <span className="relative z-0 h-9 w-9 overflow-hidden rounded-full ring-1 ring-black/70 bg-white">
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt="avatar"
-              className="h-full w-full object-cover"
-              loading="lazy"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <span className="grid h-full w-full place-items-center">
-              <IconUser className="h-5 w-5 text-black/70" />
-            </span>
-          )}
+        <span className="relative z-0 h-9 w-9">
+          <ProfileAvatarIcon className="h-full w-full" iconClassName="h-9 w-9" />
         </span>
       </button>
 
-      {/* ✅ Premium scrim (сул overlay) */}
       {open && (
         <button
           aria-label="Close profile menu overlay"
@@ -414,7 +430,6 @@ function ProfileDropdown({
         />
       )}
 
-      {/* ✅ Modern dropdown: animate + caret + premium shadow */}
       <div
         className={cn(
           "absolute right-0 mt-3 w-96 z-[999]",
@@ -424,9 +439,8 @@ function ProfileDropdown({
             : "opacity-0 -translate-y-1 scale-[0.98] pointer-events-none"
         )}
         role="menu"
-        aria-hidden={!open}
+        aria-hidden={!open ? "true" : "false"}
       >
-        {/* caret */}
         <div className="absolute -top-2 right-6 h-4 w-4 rotate-45 bg-white border-2 border-black/15 shadow-[0_10px_30px_rgba(0,0,0,0.10)]" />
 
         <div
@@ -436,25 +450,9 @@ function ProfileDropdown({
             "shadow-[0_30px_110px_rgba(0,0,0,0.28)]"
           )}
         >
-          {/* top header */}
           <div className="px-5 pt-5 pb-4 border-b border-black/10">
             <div className="flex items-center gap-4">
-              <span className="relative h-12 w-12 overflow-hidden rounded-3xl bg-white ring-1 ring-black/15">
-                {avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={avatarUrl}
-                    alt="avatar"
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <span className="grid h-full w-full place-items-center">
-                    <IconUser className="h-6 w-6 text-black/70" />
-                  </span>
-                )}
-              </span>
+              <ProfileAvatarIcon className="h-12 w-12 rounded-3xl" iconClassName="h-6 w-6" />
 
               <div className="min-w-0">
                 <div className="text-[16px] font-extrabold text-black truncate">
@@ -545,6 +543,7 @@ function ProfileDropdown({
               <button
                 type="button"
                 onClick={toggleLang}
+                role="menuitem"
                 className={cn(
                   "w-full flex items-center justify-between rounded-2xl px-4 py-3",
                   "bg-black/[0.03] hover:bg-black/[0.06] active:bg-black/[0.08] transition",
@@ -563,6 +562,7 @@ function ProfileDropdown({
               <button
                 type="button"
                 onClick={toggleTheme}
+                role="menuitem"
                 className={cn(
                   "w-full flex items-center justify-between rounded-2xl px-4 py-3",
                   "bg-black/[0.03] hover:bg-black/[0.06] active:bg-black/[0.08] transition",
@@ -863,7 +863,6 @@ export default function Header() {
     router.push("/");
   };
 
-  // ✅ HARDEN: admin зөвхөн (user + loading=false + role=admin) үед л
   const isAdmin = !!user && !loading && role === "admin";
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -891,12 +890,10 @@ export default function Header() {
     setAdminOpen(false);
   }, [pathname]);
 
-  // ✅ NEW: admin биш үед admin dropdown state-г force хаана (flash/hover үлдэхээс хамгаална)
   useEffect(() => {
     if (!isAdmin) setAdminOpen(false);
   }, [isAdmin]);
 
-  // ✅ login drawer state
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginCb, setLoginCb] = useState<string>("/");
 
@@ -959,7 +956,6 @@ export default function Header() {
               </Link>
             )}
 
-            {/* ✅ ADMIN dropdown: хатуу шалгалттай */}
             {isAdmin && (
               <div ref={adminRef} className="relative">
                 <button
@@ -972,7 +968,7 @@ export default function Header() {
                     adminOpen && "bg-black/[0.04]"
                   )}
                   aria-haspopup="menu"
-                  aria-expanded={adminOpen}
+                  aria-expanded={adminOpen ? "true" : "false"}
                 >
                   <UnreadBadge count={openReqCount} className="-top-2 -right-2" />
                   АДМИН
@@ -1059,7 +1055,6 @@ export default function Header() {
                   uid={user.uid}
                   email={user.email || ""}
                   displayName={userDoc?.name || ""}
-                  avatarUrl={(userDoc as any)?.avatarUrl || ""}
                   onLogout={onLogout}
                   unreadCount={unreadCount}
                 />
@@ -1073,7 +1068,7 @@ export default function Header() {
               className="h-10 w-10 grid place-items-center rounded-full border border-black/10 bg-white active:scale-[0.98]"
               aria-label="Profile"
             >
-              <IconUser className="h-5 w-5 text-black" />
+              <IconProfileModern className="h-5 w-5 text-black" />
             </button>
           </div>
         </div>

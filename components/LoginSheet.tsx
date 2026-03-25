@@ -1,17 +1,14 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendEmailVerification,
-  signOut,
-} from "firebase/auth";
-import { auth } from "@/lib/firebase";
-
-type Mode = "login" | "register";
+  useAuthForm,
+  strengthBarColors,
+  strengthLabels,
+  strengthTextColors,
+} from "@/hooks/useAuthForm";
 
 export default function LoginSheet({
   callbackUrl,
@@ -19,7 +16,7 @@ export default function LoginSheet({
   onClose,
 }: {
   callbackUrl: string;
-  initialMode?: Mode;
+  initialMode?: "login" | "register";
   onClose?: () => void;
 }) {
   const router = useRouter();
@@ -28,20 +25,17 @@ export default function LoginSheet({
     return `?callbackUrl=${encodeURIComponent(callbackUrl || "/")}`;
   }, [callbackUrl]);
 
-  const [mode, setMode] = useState<Mode>(initialMode);
+  const f = useAuthForm({
+    initialMode,
+    callbackUrl: callbackUrl || "/",
+    onSuccess: () => {
+      onClose?.();
+      router.replace(callbackUrl || "/");
+      router.refresh();
+    },
+  });
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string>("");
-  const [ok, setOk] = useState<string>("");
-
-  // ✅ баталгаажуулах мэйл дахин явуулах UI
-  const [needsVerify, setNeedsVerify] = useState(false);
-
-  // ✅ Drawer дээр ESC дархад хаах боломжтой
+  // ESC хаах
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose?.();
@@ -50,195 +44,43 @@ export default function LoginSheet({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const hardRedirectFallback = () => {
-    window.setTimeout(() => {
-      try {
-        window.location.href = callbackUrl || "/";
-      } catch {}
-    }, 300);
-  };
-
-  const resendVerification = async () => {
-    if (loading) return;
-    setErr("");
-    setOk("");
-    setLoading(true);
-
-    try {
-      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-
-      if (cred.user.emailVerified) {
-        setNeedsVerify(false);
-        setOk("Имэйл аль хэдийн баталгаажсан байна. Одоо нэвтэрч болно.");
-        onClose?.();
-        router.replace(callbackUrl || "/");
-        router.refresh();
-        hardRedirectFallback();
-        return;
-      }
-
-      await sendEmailVerification(cred.user, {
-        url: `${window.location.origin}/login`,
-        handleCodeInApp: false,
-      });
-
-      await signOut(auth);
-
-      setNeedsVerify(true);
-      setOk("Баталгаажуулах мэйл дахин явууллаа. Gmail-ээ шалгаарай.");
-    } catch (error: any) {
-      const code = error?.code as string | undefined;
-
-      if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
-        setErr("Имэйл эсвэл нууц үг буруу байна.");
-      } else if (code === "auth/user-not-found") {
-        setErr("Энэ имэйлээр бүртгэл олдсонгүй.");
-      } else if (code === "auth/invalid-email") {
-        setErr("Имэйл хаяг буруу форматтай байна.");
-      } else if (code === "auth/too-many-requests") {
-        setErr("Олон удаа оролдлоо. Түр хүлээгээд дахин оролдоорой.");
-      } else {
-        setErr("Алдаа гарлаа. Дахин оролдоорой.");
-      }
-
-      console.error("resend verification error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (loading) return;
-
-    setErr("");
-    setOk("");
-    setNeedsVerify(false);
-    setLoading(true);
-
-    if (mode === "register") {
-      if (password !== confirmPassword) {
-        setErr("Нууц үг таарахгүй байна. Дахин шалгана уу.");
-        setLoading(false);
-        return;
-      }
-    }
-
-    try {
-      if (mode === "login") {
-        const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-
-        if (!cred.user.emailVerified) {
-          await signOut(auth);
-          setNeedsVerify(true);
-          setErr("Имэйл баталгаажуулаагүй байна. Gmail-ээ шалгаад баталгаажуулна уу.");
-          return;
-        }
-
-        setOk("Амжилттай нэвтэрлээ.");
-
-        onClose?.();
-        router.replace(callbackUrl || "/");
-        router.refresh();
-        hardRedirectFallback();
-      } else {
-        const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-
-        await sendEmailVerification(cred.user, {
-          url: `${window.location.origin}/login`,
-          handleCodeInApp: false,
-        });
-
-        await signOut(auth);
-
-        setNeedsVerify(true);
-        setOk("Бүртгэл амжилттай. Gmail-ээ шалгаад баталгаажуулсны дараа нэвтэрнэ үү.");
-      }
-    } catch (error: any) {
-      const code = error?.code as string | undefined;
-
-      if (mode === "login") {
-        if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
-          setErr("Имэйл эсвэл нууц үг буруу байна.");
-        } else if (code === "auth/user-not-found") {
-          setErr("Энэ имэйлээр бүртгэл олдсонгүй.");
-        } else if (code === "auth/invalid-email") {
-          setErr("Имэйл хаяг буруу форматтай байна.");
-        } else if (code === "auth/too-many-requests") {
-          setErr("Олон удаа оролдлоо. Түр хүлээгээд дахин оролдоорой.");
-        } else {
-          setErr("Нэвтрэхэд алдаа гарлаа. Дахин оролдоорой.");
-        }
-      } else {
-        if (code === "auth/email-already-in-use") {
-          setErr("Энэ имэйл өмнө нь бүртгэлтэй байна. Нэвтрэх таб руу ороод орно уу.");
-        } else if (code === "auth/invalid-email") {
-          setErr("Имэйл хаяг буруу форматтай байна.");
-        } else if (code === "auth/weak-password") {
-          setErr("Нууц үг сул байна. Дор хаяж 6 тэмдэгт байлгаарай.");
-        } else if (code === "auth/too-many-requests") {
-          setErr("Олон удаа оролдлоо. Түр хүлээнэ үү.");
-        } else {
-          setErr("Бүртгүүлэхэд алдаа гарлаа. Дахин оролдоорой.");
-        }
-      }
-
-      console.error("auth error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="w-full max-w-[420px]">
       {/* Title */}
       <div className="text-center">
         <div className="text-[28px] font-extrabold tracking-tight text-black">
-          {mode === "login" ? "Нэвтрэх" : "Бүртгүүлэх"}
+          {f.mode === "login" ? "Нэвтрэх" : "Бүртгүүлэх"}
         </div>
         <div className="mt-2 text-sm text-black/45 leading-snug">
           Имэйл хаяг болон нууц үгээ хийгээд нэвтэрч орно уу.
         </div>
       </div>
 
-      {/* Tabs (login/register) — zadlan шиг pill */}
+      {/* Tabs */}
       <div className="mt-6">
         <div className="mx-auto flex w-full max-w-[360px] rounded-full border border-black/10 bg-black/[0.03] p-1">
           <button
             type="button"
-            disabled={loading}
-            onClick={() => {
-              setMode("login");
-              setErr("");
-              setOk("");
-              setNeedsVerify(false);
-              setConfirmPassword("");
-            }}
+            disabled={f.loading}
+            onClick={() => f.mode !== "login" && f.switchMode()}
             className={[
               "h-10 flex-1 rounded-full text-sm font-extrabold transition",
-              loading ? "opacity-60 cursor-not-allowed" : "",
-              mode === "login"
+              f.loading ? "opacity-60 cursor-not-allowed" : "",
+              f.mode === "login"
                 ? "bg-white text-black shadow-[0_8px_24px_rgba(0,0,0,0.10)]"
                 : "text-black/55 hover:text-black",
             ].join(" ")}
           >
             Нэвтрэх
           </button>
-
           <button
             type="button"
-            disabled={loading}
-            onClick={() => {
-              setMode("register");
-              setErr("");
-              setOk("");
-              setNeedsVerify(false);
-              setConfirmPassword("");
-            }}
+            disabled={f.loading}
+            onClick={() => f.mode !== "register" && f.switchMode()}
             className={[
               "h-10 flex-1 rounded-full text-sm font-extrabold transition",
-              loading ? "opacity-60 cursor-not-allowed" : "",
-              mode === "register"
+              f.loading ? "opacity-60 cursor-not-allowed" : "",
+              f.mode === "register"
                 ? "bg-white text-black shadow-[0_8px_24px_rgba(0,0,0,0.10)]"
                 : "text-black/55 hover:text-black",
             ].join(" ")}
@@ -250,139 +92,144 @@ export default function LoginSheet({
 
       {/* Form */}
       <div className="mt-6">
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={f.onSubmit} className="space-y-4">
+          {/* Email */}
           <div>
-            <label className="mb-2 block text-xs font-semibold text-black/60">
-              Имэйл хаяг
-            </label>
+            <label className="mb-2 block text-xs font-semibold text-black/60">Имэйл хаяг</label>
             <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={f.email}
+              onChange={(e) => f.setEmail(e.target.value)}
               type="email"
               autoComplete="email"
-              className="
-                w-full h-12 rounded-xl
-                border border-black/10
-                bg-white
-                px-4
-                text-sm text-black
-                outline-none transition
-                focus:border-black/25
-              "
+              className="w-full h-12 rounded-xl border border-black/10 bg-white px-4 text-sm text-black outline-none transition focus:border-black/25"
               placeholder=""
             />
           </div>
 
+          {/* Password */}
           <div>
-            <label className="mb-2 block text-xs font-semibold text-black/60">
-              Нууц үг
-            </label>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              className="
-                w-full h-12 rounded-xl
-                border border-black/10
-                bg-white
-                px-4
-                text-sm text-black
-                outline-none transition
-                focus:border-black/25
-              "
-              placeholder=""
-            />
+            <label className="mb-2 block text-xs font-semibold text-black/60">Нууц үг</label>
+            <div className="relative">
+              <input
+                value={f.password}
+                onChange={(e) => f.setPassword(e.target.value)}
+                type={f.showPassword ? "text" : "password"}
+                autoComplete={f.mode === "login" ? "current-password" : "new-password"}
+                className="w-full h-12 rounded-xl border border-black/10 bg-white px-4 pr-12 text-sm text-black outline-none transition focus:border-black/25"
+                placeholder=""
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => f.setShowPassword(!f.showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-black/30 hover:text-black/60 transition"
+              >
+                {f.showPassword ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                )}
+              </button>
+            </div>
 
-            {mode === "login" && (
+            {/* Password strength (register) */}
+            {f.mode === "register" && f.password.length > 0 && (
+              <div className="mt-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-1 gap-1">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${i <= f.strength.score ? strengthBarColors[f.strength.level] : "bg-black/10"}`} />
+                    ))}
+                  </div>
+                  <span className={`text-[11px] font-bold ${strengthTextColors[f.strength.level]}`}>{strengthLabels[f.strength.level]}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                  {f.strength.checks.map((c) => (
+                    <div key={c.label} className="flex items-center gap-1.5">
+                      {c.pass ? (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="text-emerald-500"><polyline points="20 6 9 17 4 12" /></svg>
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="text-black/15"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      )}
+                      <span className={`text-[11px] ${c.pass ? "text-black/70" : "text-black/30"}`}>{c.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {f.mode === "login" && (
               <div className="mt-3 text-xs">
-                <Link
-                  href={`/reset-password${callbackQS}`}
-                  className="text-black/45 hover:text-black"
-                >
-                  Нууц үг сэргээх
-                </Link>
+                <Link href={`/reset-password${callbackQS}`} className="text-black/45 hover:text-black">Нууц үг сэргээх</Link>
               </div>
             )}
           </div>
 
-          {mode === "register" && (
+          {/* Confirm password (register) */}
+          {f.mode === "register" && (
             <div>
-              <label className="mb-2 block text-xs font-semibold text-black/60">
-                Нууц үг давтах
-              </label>
-              <input
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                type="password"
-                autoComplete="new-password"
-                className="
-                  w-full h-12 rounded-xl
-                  border border-black/10
-                  bg-white
-                  px-4
-                  text-sm text-black
-                  outline-none transition
-                  focus:border-black/25
-                "
-                placeholder=""
-              />
+              <label className="mb-2 block text-xs font-semibold text-black/60">Нууц үг давтах</label>
+              <div className="relative">
+                <input
+                  value={f.confirmPassword}
+                  onChange={(e) => f.setConfirmPassword(e.target.value)}
+                  type={f.showConfirm ? "text" : "password"}
+                  autoComplete="new-password"
+                  className="w-full h-12 rounded-xl border border-black/10 bg-white px-4 pr-12 text-sm text-black outline-none transition focus:border-black/25"
+                  placeholder=""
+                />
+                <button type="button" tabIndex={-1} onClick={() => f.setShowConfirm(!f.showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-black/30 hover:text-black/60 transition">
+                  {f.showConfirm ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                  )}
+                </button>
+              </div>
+              {f.confirmPassword && f.password !== f.confirmPassword && (
+                <p className="mt-1.5 text-[11px] text-red-500">Нууц үг таарахгүй байна</p>
+              )}
+              {f.confirmPassword && f.password === f.confirmPassword && f.confirmPassword.length >= 6 && (
+                <p className="mt-1.5 text-[11px] text-emerald-500">✓ Таарч байна</p>
+              )}
             </div>
           )}
 
-          {err && (
-            <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700">
-              {err}
-            </div>
+          {/* Error / Success */}
+          {f.err && (
+            <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700">{f.err}</div>
           )}
-          {ok && (
-            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">
-              {ok}
+          {f.ok && (
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700">{f.ok}</div>
+          )}
+
+          {/* Rate limit warning */}
+          {f.locked && (
+            <div className="rounded-xl border border-amber-400/50 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+              🔒 {f.remainingSeconds()} секунд хүлээнэ үү.
             </div>
           )}
 
-          {needsVerify && (
-            <button
-              type="button"
-              disabled={loading}
-              onClick={resendVerification}
-              className="
-                w-full h-12 rounded-xl
-                border border-black/10 bg-white
-                text-sm font-extrabold text-black
-                hover:bg-black/[0.03]
-                disabled:opacity-60
-              "
-            >
+          {/* Verify resend */}
+          {f.needsVerify && (
+            <button type="button" disabled={f.loading} onClick={f.resendVerification} className="w-full h-12 rounded-xl border border-black/10 bg-white text-sm font-extrabold text-black hover:bg-black/[0.03] disabled:opacity-60">
               Баталгаажуулах мэйл дахин явуулах
             </button>
           )}
 
+          {/* Submit */}
           <button
-            disabled={loading}
+            disabled={f.loading || f.locked}
             type="submit"
-            className="
-              w-full h-12 rounded-xl
-             bg-blue-400
-              text-black text-sm font-extrabold
-              shadow-[0_14px_60px_rgba(47,102,255,0.22)]
-              hover:brightness-105
-              disabled:opacity-60
-              transition
-              flex items-center justify-center gap-2
-            "
+            className="w-full h-12 rounded-xl bg-blue-400 text-black text-sm font-extrabold shadow-[0_14px_60px_rgba(47,102,255,0.22)] hover:brightness-105 disabled:opacity-60 transition flex items-center justify-center gap-2"
           >
-            <span>{loading ? "Түр хүлээнэ үү..." : "Үргэлжлүүлэх"}</span>
-            <span aria-hidden="true" className="text-lg leading-none">
-              
-            </span>
+            <span>{f.loading ? "Түр хүлээнэ үү..." : "Үргэлжлүүлэх"}</span>
           </button>
         </form>
 
+        {/* Footer */}
         <div className="mt-8 border-t border-black/10 pt-4">
-          <p className="text-center text-[11px] leading-snug text-black/35">
-            Онлайн хичээл • ebacreator платформ
-          </p>
+          <p className="text-center text-[11px] leading-snug text-black/35">Онлайн хичээл • ebacreator платформ</p>
         </div>
       </div>
     </div>

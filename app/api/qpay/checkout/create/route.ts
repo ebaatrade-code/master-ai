@@ -1,17 +1,29 @@
-// FILE: app/api/qpay/checkout/create/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import * as admin from "firebase-admin";
 import { toQrPngDataUrl } from "@/lib/qr";
 import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
 
+export const runtime = "nodejs";
+
 type CreateBody = {
   courseId: string;
-  amount: number;
+  // ⚠️ amount-ыг client-ээс авахгүй (хуучин client байж магадгүй тул optional үлдээнэ)
+  amount?: number;
   description?: string;
 };
 
 type AnyObj = Record<string, any>;
+
+type SafeQPayUrl = {
+  name?: string;
+  description?: string;
+  logo?: string;
+  link: string;
+};
+
+const LOCAL_COOLDOWN_MS = 1200;
+const inMemoryCreateCooldown = new Map<string, number>();
 
 function envOrThrow(name: string): string {
   const v = process.env[name];
@@ -20,11 +32,58 @@ function envOrThrow(name: string): string {
 }
 
 function noStoreJson(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+      Expires: "0",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 function jsonError(message: string, status = 400) {
   return noStoreJson({ ok: false, message }, status);
+}
+
+function isSafeCourseId(v: string, max = 120) {
+  return /^[A-Za-z0-9_-]{1,120}$/.test(v) && v.length <= max;
+}
+
+function cleanupCooldownMap(now = Date.now()) {
+  for (const [k, exp] of inMemoryCreateCooldown.entries()) {
+    if (exp <= now) inMemoryCreateCooldown.delete(k);
+  }
+}
+
+/** Returns true if the key is within the cooldown window (request should be blocked). */
+function isCooldownBlocked(key: string): boolean {
+  const now = Date.now();
+  cleanupCooldownMap(now);
+  const exp = inMemoryCreateCooldown.get(key) ?? 0;
+  if (exp > now) return true;
+  inMemoryCreateCooldown.set(key, now + LOCAL_COOLDOWN_MS);
+  return false;
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 15000
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+      cache: "no-store",
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---- In-memory token cache (per server instance) ----
@@ -36,14 +95,19 @@ async function getQPayAccessToken(): Promise<string> {
   const password = envOrThrow("QPAY_PASSWORD");
 
   const now = Date.now();
-  if (cachedAccessToken && cachedAccessToken.expMs > now + 30_000) return cachedAccessToken.token;
+  if (cachedAccessToken && cachedAccessToken.expMs > now + 30_000) {
+    return cachedAccessToken.token;
+  }
 
   const basic = Buffer.from(`${username}:${password}`).toString("base64");
-  const res = await fetch(`${baseUrl}/v2/auth/token`, {
-    method: "POST",
-    headers: { Authorization: `Basic ${basic}` },
-    cache: "no-store",
-  });
+  const res = await fetchWithTimeout(
+    `${baseUrl}/v2/auth/token`,
+    {
+      method: "POST",
+      headers: { Authorization: `Basic ${basic}` },
+    },
+    15000
+  );
 
   const text = await res.text().catch(() => "");
   if (!res.ok) throw new Error(`QPAY auth failed (${res.status}): ${text.slice(0, 300)}`);
@@ -95,12 +159,15 @@ async function createInvoice(payload: {
     maximum_amount: null,
   };
 
-  const res = await fetch(`${baseUrl}/v2/invoice`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
+  const res = await fetchWithTimeout(
+    `${baseUrl}/v2/invoice`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(body),
+    },
+    20000
+  );
 
   const text = await res.text().catch(() => "");
   if (!res.ok) throw new Error(`QPAY invoice failed (${res.status}): ${text.slice(0, 600)}`);
@@ -118,10 +185,10 @@ async function createInvoice(payload: {
   return data as AnyObj;
 }
 
-function pickString(obj: AnyObj, keys: string[]): string {
+function pickString(obj: AnyObj, keys: string[], maxLen = 5000): string {
   for (const k of keys) {
     const v = obj?.[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "string" && v.trim()) return v.trim().slice(0, maxLen);
   }
   return "";
 }
@@ -129,7 +196,7 @@ function pickString(obj: AnyObj, keys: string[]): string {
 function extractShortUrlFromUrls(urls: any): string {
   if (!Array.isArray(urls)) return "";
   for (const u of urls) {
-    const link = typeof u?.link === "string" ? u.link : "";
+    const link = typeof u?.link === "string" ? u.link.trim() : "";
     if (link && /https?:\/\/s\.qpay\.mn\//i.test(link)) return link;
   }
   return "";
@@ -162,6 +229,56 @@ function hasReadyQpay(p: any) {
   return !!qr || urls.length > 0 || !!shortUrl;
 }
 
+function isAmountSafe(n: any) {
+  return typeof n === "number" && Number.isFinite(n) && n > 0 && n < 1_000_000_000;
+}
+
+function normalizeDescription(input?: string) {
+  const s = String(input ?? "")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return s || "Master AI payment";
+}
+
+function sanitizeString(v: unknown, max = 300) {
+  if (typeof v !== "string") return "";
+  return v.replace(/[\u0000-\u001F\u007F]/g, " ").trim().slice(0, max);
+}
+
+function normalizeQPayUrls(input: any): SafeQPayUrl[] {
+  if (!Array.isArray(input)) return [];
+
+  const out: SafeQPayUrl[] = [];
+
+  for (const item of input.slice(0, 20)) {
+    const link = sanitizeString(item?.link, 1200);
+    if (!/^https?:\/\//i.test(link)) continue;
+
+    out.push({
+      name: sanitizeString(item?.name, 120),
+      description: sanitizeString(item?.description, 180),
+      logo: sanitizeString(item?.logo, 1200),
+      link,
+    });
+  }
+
+  return out;
+}
+
+function getClientIp(req: NextRequest) {
+  const xff = req.headers.get("x-forwarded-for") || "";
+  const realIp = req.headers.get("x-real-ip") || "";
+  const firstForwarded = xff.split(",")[0]?.trim() || "";
+  return firstForwarded || realIp || "";
+}
+
+function sha256Hex(input: string) {
+  return crypto.createHash("sha256").update(input).digest("hex");
+}
+
+
 export async function POST(req: NextRequest) {
   try {
     // 1) auth
@@ -172,25 +289,78 @@ export async function POST(req: NextRequest) {
     const idToken = m[1].trim();
     if (!idToken) return jsonError("Empty idToken", 401);
 
-    const decoded = await adminAuth().verifyIdToken(idToken);
+    // ✅ revoked token check additive security
+    const decoded = await adminAuth().verifyIdToken(idToken, true);
     if (!decoded?.uid) return jsonError("Invalid token", 401);
 
     // 2) body
     const body = (await req.json().catch(() => null)) as CreateBody | null;
     if (!body) return jsonError("Invalid JSON body", 400);
 
-    const courseId = (body.courseId || "").trim();
-    const amount = Number(body.amount);
-    const description = (body.description || "").trim() || "Master AI payment";
+    const courseId = String(body.courseId || "").trim();
+    const description = normalizeDescription(body.description);
 
     if (!courseId) return jsonError("courseId is required", 400);
-    if (!Number.isFinite(amount) || amount <= 0) return jsonError("amount must be > 0", 400);
+    if (!isSafeCourseId(courseId)) return jsonError("Invalid courseId", 400);
+    if (description.length < 2 || description.length > 140) {
+      return jsonError("description length invalid", 400);
+    }
 
     const db = adminDb();
 
-    // 3) course info
+    // ✅ Cooldown guard: duplicate request ирвэл existing unpaid invoice-г reuse хийж буцаана
+    if (isCooldownBlocked(`${decoded.uid}:${courseId}`)) {
+      const existingQ = await db
+        .collection("qpayPayments")
+        .where("uid", "==", decoded.uid)
+        .where("courseId", "==", courseId)
+        .where("paid", "==", false)
+        .orderBy("createdAt", "desc")
+        .limit(1)
+        .get();
+
+      if (!existingQ.empty) {
+        const ed = existingQ.docs[0].data() as any;
+        if (hasReadyQpay(ed)) {
+          return noStoreJson(
+            {
+              ok: true,
+              reused: true,
+              invoiceDocId: existingQ.docs[0].id,
+              qpayInvoiceId: ed.qpayInvoiceId ?? null,
+              senderInvoiceNo: ed.senderInvoiceNo ?? null,
+              amount: Number(ed.amount),
+              description: String(ed.description || ""),
+              qrText: ed.qrText ?? null,
+              qrImageDataUrl: ed.qrImageDataUrl ?? null,
+              shortUrl: ed.shortUrl ?? null,
+              urls: Array.isArray(ed.urls) ? ed.urls : [],
+              durationDays: ed.durationDays ?? null,
+              durationLabel: ed.durationLabel ?? null,
+            },
+            200
+          );
+        }
+      }
+
+      return noStoreJson({ ok: false, message: "Too many requests. Please wait a moment." }, 429);
+    }
+
+    const userAgent = sanitizeString(req.headers.get("user-agent"), 300);
+    const origin = sanitizeString(req.headers.get("origin"), 300);
+    const clientIp = getClientIp(req);
+    const ipHash = clientIp ? sha256Hex(clientIp) : "";
+
+    // 3) course info (✅ SERVER TRUTH)
     const courseSnap = await db.collection("courses").doc(courseId).get();
-    const c = courseSnap.exists ? (courseSnap.data() as any) : null;
+    if (!courseSnap.exists) return jsonError("Course not found", 404);
+
+    const c = courseSnap.data() as any;
+
+    // ✅ amount = course.price (client amount-ыг бүрэн үл тооно)
+    const price = typeof c?.price === "number" ? c.price : Number(c?.price);
+    const amount = Number.isFinite(price) ? Math.round(price) : NaN;
+    if (!isAmountSafe(amount)) return jsonError("Invalid course price", 400);
 
     const courseTitle = String(c?.title || c?.name || "").trim() || null;
     const courseThumbUrl = String(c?.thumbnailUrl || c?.thumbUrl || c?.thumbnail || "").trim() || null;
@@ -209,6 +379,42 @@ export async function POST(req: NextRequest) {
       String(c?.duration || "").trim() ||
       `${durationDays} хоног`;
 
+    // ✅ User doc load (purchase validity check хийхийн тулд)
+    const userSnap = await db.collection("users").doc(decoded.uid).get();
+    const u = userSnap.exists ? (userSnap.data() as any) : null;
+    const purchasedIds: string[] = Array.isArray(u?.purchasedCourseIds) ? u.purchasedCourseIds : [];
+
+    if (purchasedIds.includes(courseId)) {
+      // ✅ Зөвхөн идэвхтэй (дуусаагүй) purchase байвал alreadyPurchased буцаана.
+      // Хугацаа дууссан бол re-purchase-г зөвшөөрнө.
+      const purchase = u?.purchases?.[courseId] ?? null;
+      const purchaseIsActive = (() => {
+        if (!purchase) return false;
+        if (purchase.status !== "PAID") return false;
+        if (purchase.active === false) return false;
+        const raw = purchase.expiresAt;
+        if (!raw) return false;
+        const expMs: number =
+          typeof raw?.toMillis === "function"
+            ? raw.toMillis()
+            : typeof raw?.toDate === "function"
+            ? (raw.toDate() as Date).getTime()
+            : typeof raw === "number"
+            ? raw
+            : new Date(String(raw)).getTime();
+        if (!Number.isFinite(expMs)) return false;
+        return expMs > Date.now();
+      })();
+
+      if (purchaseIsActive) {
+        return noStoreJson(
+          { ok: true, alreadyPurchased: true, courseId, amount, durationDays, durationLabel },
+          200
+        );
+      }
+      // Purchase хугацаа дууссан эсвэл хүчингүй — re-purchase хийх боломжтой, доош үргэлжлүүлнэ
+    }
+
     // ✅ 4) тухайн course дээрх бүх unpaid docs (хамгийн сүүлийнхийг 1 л үлдээнэ)
     const unpaidQ = await db
       .collection("qpayPayments")
@@ -225,17 +431,20 @@ export async function POST(req: NextRequest) {
     const activeDocId = unpaidDocs.length ? unpaidDocs[0].id : db.collection("qpayPayments").doc().id;
     const activeData = unpaidDocs.length ? (unpaidDocs[0].data() as any) : null;
 
-    // ✅ Бусад unpaid docs-ыг ARCHIVED болгоно (UI дээр олон мөр харагдахгүй)
+    // ✅ Бусад unpaid docs-ыг ARCHIVED болгоно
     if (unpaidDocs.length > 1) {
       const batch = db.batch();
       for (let i = 1; i < unpaidDocs.length; i++) {
         const d = unpaidDocs[i];
         batch.set(
           d.ref,
-          { status: "archived", archivedAt: admin.firestore.FieldValue.serverTimestamp() },
+          {
+            status: "archived",
+            archivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
           { merge: true }
         );
-        // invoices дотор нь ч мөн адил archived болгоно
         batch.set(
           db.collection("invoices").doc(d.id),
           { status: "ARCHIVED", updatedAt: admin.firestore.FieldValue.serverTimestamp() },
@@ -249,7 +458,7 @@ export async function POST(req: NextRequest) {
     const payDocRef = db.collection("qpayPayments").doc(payDocId);
     const invRef = db.collection("invoices").doc(payDocId);
 
-    // ✅ 5) invoices: нэг мөр байх ёстой тул үргэлж UPDATE (amount хамгийн сүүлийнхээр хадгалагдана)
+    // ✅ 5) invoices: нэг мөр байх ёстой тул үргэлж UPDATE
     await invRef.set(
       {
         uid: decoded.uid,
@@ -262,16 +471,36 @@ export async function POST(req: NextRequest) {
         durationLabel,
         createdAt: activeData?.createdAt ?? admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        requestMeta: {
+          ipHash: ipHash || null,
+          userAgent: userAgent || null,
+          origin: origin || null,
+        },
       },
       { merge: true }
     );
 
-    // ✅ 6) Хэрвээ ACTIVE doc дээр QPay бэлэн бөгөөд amount өөрчлөгдөөгүй бол reuse
+    // ✅ 6) Хэрвээ ACTIVE doc дээр QPay бэлэн бол reuse (amount нь server price-тай таарна)
     const prevAmount = Number(activeData?.amount);
     const sameAmount = Number.isFinite(prevAmount) && prevAmount === amount;
 
     if (activeData && sameAmount && hasReadyQpay(activeData)) {
-      // invoices.qpay-г бүрэн нөхөөд буцаана
+      await payDocRef.set(
+        {
+          uid: decoded.uid,
+          courseId,
+          amount,
+          status: "pending",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          requestMeta: {
+            ipHash: ipHash || null,
+            userAgent: userAgent || null,
+            origin: origin || null,
+          },
+        },
+        { merge: true }
+      );
+
       await invRef.set(
         {
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -308,8 +537,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ 7) Эндээс цааш: “шинэ invoice” үүсгэнэ
-    // activeDocId-г солихгүй (өөрөөр хэлбэл түүх 1 л мөр)
+    // ✅ 7) шинэ invoice үүсгэнэ (same docId → түүх давхардахгүй)
     await payDocRef.set(
       {
         uid: decoded.uid,
@@ -318,8 +546,14 @@ export async function POST(req: NextRequest) {
         description,
         status: "creating",
         paid: false,
+        granted: false,
         createdAt: activeData?.createdAt ?? admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        requestMeta: {
+          ipHash: ipHash || null,
+          userAgent: userAgent || null,
+          origin: origin || null,
+        },
       },
       { merge: true }
     );
@@ -327,21 +561,21 @@ export async function POST(req: NextRequest) {
     const senderInvoiceNo = crypto.randomUUID();
 
     const siteUrl = envOrThrow("SITE_URL").replace(/\/+$/, "");
-    const cbSecret = (process.env.QPAY_CALLBACK_SECRET || "").trim();
+    const cbSecret = String(process.env.QPAY_CALLBACK_SECRET || "").trim();
 
+    // ✅ Callback URL-г зөвхөн ref + s гэж богиносгоно (QPay max 255 chars)
+    // uid, courseId, ts, sig-г URL-д оруулахгүй — Firestore-оос ref-ээр уншина
     const callbackUrl =
       `${siteUrl}/api/qpay/callback?ref=${encodeURIComponent(payDocId)}` +
-      `&courseId=${encodeURIComponent(courseId)}` +
-      `&uid=${encodeURIComponent(decoded.uid)}` +
       (cbSecret ? `&s=${encodeURIComponent(cbSecret)}` : "");
 
     const inv = await createInvoice({ amount, description, callbackUrl, senderInvoiceNo });
 
-    const qpayInvoiceId = pickString(inv, ["invoice_id", "invoiceId"]);
-    const qrText = pickString(inv, ["qr_text", "qrText", "qr_string", "qrString"]);
-    const qrImageBase64 = pickString(inv, ["qr_image", "qrImage"]);
+    const qpayInvoiceId = pickString(inv, ["invoice_id", "invoiceId"], 200);
+    const qrText = pickString(inv, ["qr_text", "qrText", "qr_string", "qrString"], 5000);
+    const qrImageBase64 = pickString(inv, ["qr_image", "qrImage"], 2_000_000);
 
-    const urls =
+    const rawUrls =
       Array.isArray(inv?.urls)
         ? inv.urls
         : Array.isArray(inv?.payment_urls)
@@ -350,8 +584,10 @@ export async function POST(req: NextRequest) {
         ? inv.deeplinks
         : [];
 
+    const urls = normalizeQPayUrls(rawUrls);
+
     const shortUrl =
-      pickString(inv, ["short_url", "shortUrl", "qpay_short_url", "qpayShortUrl"]) ||
+      pickString(inv, ["short_url", "shortUrl", "qpay_short_url", "qpayShortUrl"], 1200) ||
       extractShortUrlFromUrls(urls);
 
     let qrImageDataUrl: string | null = null;
@@ -365,7 +601,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ✅ 8) qpayPayments update (same docId → түүх давхардахгүй)
+    // ✅ 8) qpayPayments update
     await payDocRef.set(
       {
         status: "pending",
@@ -377,6 +613,9 @@ export async function POST(req: NextRequest) {
         shortUrl: shortUrl || null,
         urls,
         callbackUrl,
+        // ✅ non-breaking нэмэлт audit/meta
+        durationDays,
+        durationLabel,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -407,6 +646,7 @@ export async function POST(req: NextRequest) {
         qpayInvoiceId: qpayInvoiceId || null,
         senderInvoiceNo,
         amount,
+        amountSource: "course",
         description,
         qrText: qrText || null,
         qrImageDataUrl: qrImageDataUrl || null,

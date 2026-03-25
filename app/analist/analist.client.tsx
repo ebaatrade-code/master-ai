@@ -160,26 +160,6 @@ export default function AnalistClient() {
         setRev7(bucket7);
         setRev30(bucket30);
 
-        // 4) free lesson views time-window (7/30)
-        const freeSnap = await getDocs(collection(db, "freeLessonViews"));
-        const views = freeSnap.docs.map((d) => d.data() as any);
-
-        const now = Date.now();
-        const ms7 = 7 * 24 * 60 * 60 * 1000;
-        const ms30 = 30 * 24 * 60 * 60 * 1000;
-
-        let c7 = 0;
-        let c30 = 0;
-        for (const v of views) {
-          const dt: Date | null = v.createdAt?.toDate?.() ?? null;
-          if (!dt) continue;
-          const t = dt.getTime();
-          if (now - t <= ms30) c30++;
-          if (now - t <= ms7) c7++;
-        }
-        setFreeViews7(c7);
-        setFreeViews30(c30);
-
         // 5) build rows
         const allCourseIds = new Set<string>([
           ...Array.from(soldMap.keys()),

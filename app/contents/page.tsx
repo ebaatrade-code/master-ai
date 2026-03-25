@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 import CourseCard from "@/components/CourseCard";
@@ -25,12 +25,26 @@ type Course = {
 
 export default function ContentsPage() {
   // ✅ role авна (admin бол бүхнийг харуулахад хэрэгтэй)
-  const { user, loading, purchasedCourseIds, role } = useAuth() as any;
+  const { user, userDoc, loading, purchasedCourseIds, role } = useAuth() as any;
 
   const purchasedSet = useMemo(
     () => new Set(purchasedCourseIds ?? []),
     [purchasedCourseIds]
   );
+
+  function hasValidCourseAccess(courseId: string): boolean {
+    if (!user) return false;
+    const purchase = userDoc?.purchases?.[courseId];
+    if (!purchase) return false;
+    if (purchase.status !== "PAID") return false;
+    if (purchase.active === false) return false;
+    const raw = purchase.expiresAt;
+    if (!raw) return false;
+    const expDate: Date =
+      typeof raw?.toDate === "function" ? raw.toDate() : new Date(raw);
+    if (isNaN(expDate.getTime())) return false;
+    return expDate.getTime() > Date.now();
+  }
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -44,7 +58,12 @@ export default function ContentsPage() {
       setErr(null);
 
       try {
-        const q = query(collection(db, "courses"), orderBy("title", "asc"));
+        // Admin бол бүгдийг, энгийн хэрэглэгч бол isPublished==true-г л татна
+        // (Firestore rules isPublished==true query-г л зөвшөөрдөг)
+        const q =
+          role === "admin"
+            ? query(collection(db, "courses"), orderBy("title", "asc"))
+            : query(collection(db, "courses"), where("isPublished", "==", true));
         const snap = await getDocs(q);
 
         const list: Course[] = snap.docs.map((d) => {
@@ -56,13 +75,7 @@ export default function ContentsPage() {
           } as Course;
         });
 
-        // ✅ FIX:
-        // - Admin: бүгдийг харуулна
-        // - Бусад: isPublished === false бол нуух
-        const visible =
-          role === "admin"
-            ? list
-            : list.filter((c: any) => c?.isPublished !== false);
+        const visible = list;
 
         if (alive) setCourses(visible);
       } catch (e) {
@@ -118,13 +131,11 @@ export default function ContentsPage() {
       ) : (
         <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {courses.map((c) => {
-            const isPurchased = purchasedSet.has(c.id);
-
             return (
               <CourseCard
                 key={c.id}
                 course={c}
-                isPurchased={isPurchased}
+                isPurchased={hasValidCourseAccess(c.id)}
                 href={`/course/${c.id}`}
               />
             );

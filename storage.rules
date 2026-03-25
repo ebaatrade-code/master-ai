@@ -1,0 +1,65 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    function isSafeImageMime() {
+      return request.resource.contentType.matches('image/png')
+        || request.resource.contentType.matches('image/jpeg')
+        || request.resource.contentType.matches('image/webp')
+        || request.resource.contentType.matches('image/gif');
+    }
+
+    /* =========================
+       THUMBNAILS — нийтэд харагдана
+    ========================= */
+    match /thumbnails/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    /* =========================
+       PAID COURSE VIDEOS
+       Client-аас бүрэн хаана — зөвхөн server Admin SDK stream route уншина
+    ========================= */
+    match /videos/courses/{courseId}/{allPaths=**} {
+      allow read: if false;
+      allow write: if isAdmin();
+    }
+
+    /* =========================
+       SUPPORT REQUEST IMAGES
+    ========================= */
+    match /supportRequests/{uid}/{fileName} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+
+      allow create, update: if signedIn()
+        && isVerifiedEmail()
+        && request.auth.uid == uid
+        && fileName.matches('^[A-Za-z0-9._-]{1,200}$')
+        && request.resource.size < 5 * 1024 * 1024
+        && isSafeImageMime();
+
+      allow delete: if isAdmin() || (signedIn() && request.auth.uid == uid);
+    }
+
+    /* =========================
+       DENY ALL
+    ========================= */
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

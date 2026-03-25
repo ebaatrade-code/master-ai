@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   collection,
@@ -10,7 +9,7 @@ import {
   orderBy,
   query,
   updateDoc,
-  serverTimestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
@@ -19,15 +18,7 @@ type Noti = {
   id: string;
   title?: string;
   body?: string;
-
-  // ✅ link
-  href?: string;
-
-  // ✅ NEW: бид notification дээр courseId хадгалдаг бол fallback линк үүсгэхэд хэрэгтэй
-  courseId?: string;
-
   createdAt?: any;
-  readAt?: any;
   read?: boolean;
 };
 
@@ -55,27 +46,13 @@ function fmtTime(ts: any) {
   }
 }
 
-/** ✅ NEW: Notification-оос очих “зөв” линк
- * Танай screenshot дээр route: /course/<id>
- * Худалдан авах хэсэг рүү: #buy
- */
-function resolveHref(n: Noti) {
-  const raw = (n.href || "").trim();
-  if (raw) return raw;
-
-  const cid = String(n.courseId || "").trim();
-  if (cid) return `/course/${cid}#buy`;
-
-  return "";
-}
-
 export default function NotificationsPage() {
-  const router = useRouter();
   const { user, loading } = useAuth();
 
   const [items, setItems] = useState<Noti[]>([]);
   const [tab, setTab] = useState<"all" | "unread">("all");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -100,42 +77,51 @@ export default function NotificationsPage() {
 
   const filtered = useMemo(() => {
     if (tab === "all") return items;
-    return items.filter((x: any) => !x?.readAt && x?.read !== true);
+    return items.filter((x) => x.read !== true);
   }, [items, tab]);
 
   const unreadCount = useMemo(
-    () => items.filter((x: any) => !x?.readAt && x?.read !== true).length,
+    () => items.filter((x) => x.read !== true).length,
     [items]
   );
 
-  const markReadAndGo = async (n: Noti) => {
-    if (!user) return;
-
+  // Нэг мэдэгдлийг уншсан болгоно — navigate хийхгүй
+  const markRead = async (n: Noti) => {
+    if (!user || n.read === true) return;
     try {
       setBusyId(n.id);
-
-      const isUnread = !(n as any)?.readAt && (n as any)?.read !== true;
-
-      if (isUnread) {
-        // ✅ Optimistic UI
-        setItems((prev) =>
-          prev.map((x: any) =>
-            x.id === n.id ? { ...x, read: true, readAt: new Date() } : x
-          )
-        );
-
-        await updateDoc(doc(db, "users", user.uid, "notifications", n.id), {
-          read: true,
-          readAt: serverTimestamp(),
-        });
-      }
-
-      const href = resolveHref(n);
-      if (href) router.push(href);
+      setItems((prev) =>
+        prev.map((x) => (x.id === n.id ? { ...x, read: true } : x))
+      );
+      await updateDoc(doc(db, "users", user.uid, "notifications", n.id), {
+        read: true,
+      });
     } catch (err) {
-      console.error("markReadAndGo failed:", err);
+      console.error("markRead failed:", err);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  // Бүх уншаагүй мэдэгдлийг нэг дор уншсан болгоно
+  const markAllRead = async () => {
+    if (!user) return;
+    const unread = items.filter((x) => x.read !== true);
+    if (!unread.length) return;
+    try {
+      setMarkingAll(true);
+      setItems((prev) => prev.map((x) => ({ ...x, read: true })));
+      const batch = writeBatch(db);
+      for (const n of unread) {
+        batch.update(doc(db, "users", user.uid, "notifications", n.id), {
+          read: true,
+        });
+      }
+      await batch.commit();
+    } catch (err) {
+      console.error("markAllRead failed:", err);
+    } finally {
+      setMarkingAll(false);
     }
   };
 
@@ -157,7 +143,6 @@ export default function NotificationsPage() {
             Шинээсээ хуучин хүртэл бүгд энд байна.
           </div>
         </div>
-
         <Link
           href="/"
           className="rounded-full bg-white px-4 py-2 text-sm font-extrabold text-black ring-1 ring-black/15 hover:bg-black/[0.04]"
@@ -166,38 +151,42 @@ export default function NotificationsPage() {
         </Link>
       </div>
 
-      {/* Tabs */}
-      <div className="mt-5 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setTab("all")}
-          className={tabBtn(tab === "all")}
-        >
-          Бүгд
-        </button>
+      {/* Tabs + Бүгдийг унших */}
+      <div className="mt-5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setTab("all")} className={tabBtn(tab === "all")}>
+            Бүгд
+          </button>
+          <button type="button" onClick={() => setTab("unread")} className={tabBtn(tab === "unread")}>
+            Уншаагүй{" "}
+            <span
+              className={cn(
+                "ml-2 rounded-full px-2 py-0.5 text-xs font-extrabold ring-1",
+                tab === "unread"
+                  ? "bg-white text-black ring-black/20"
+                  : "bg-black/[0.04] text-black ring-black/10"
+              )}
+            >
+              {unreadCount}
+            </span>
+          </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => setTab("unread")}
-          className={tabBtn(tab === "unread")}
-        >
-          Уншаагүй{" "}
-          <span
-            className={cn(
-              "ml-2 rounded-full px-2 py-0.5 text-xs font-extrabold ring-1",
-              tab === "unread"
-                ? "bg-white text-black ring-black/20"
-                : "bg-black/[0.04] text-black ring-black/10"
-            )}
+        {/* Бүгдийг унших товч */}
+        {unreadCount > 0 && (
+          <button
+            type="button"
+            onClick={markAllRead}
+            disabled={markingAll}
+            className="rounded-full px-4 py-2 text-sm font-extrabold text-black/60 ring-1 ring-black/15 hover:bg-black/[0.04] disabled:opacity-50 transition"
           >
-            {unreadCount}
-          </span>
-        </button>
+            {markingAll ? "..." : "Бүгдийг унших"}
+          </button>
+        )}
       </div>
 
       {/* Content */}
       <div className="mt-6 overflow-hidden rounded-3xl bg-white ring-1 ring-black/10 shadow-[0_20px_60px_rgba(0,0,0,0.10)]">
-        {/* Not authed */}
         {!loading && !user && (
           <div className="p-6">
             <div className="text-[16px] font-extrabold text-black">
@@ -206,28 +195,15 @@ export default function NotificationsPage() {
             <div className="mt-2 text-sm text-black/60">
               Мэдэгдэл нь хэрэглэгч бүр дээр тусдаа хадгалагдана.
             </div>
-            <button
-              onClick={() =>
-                router.push(
-                  `/login?callbackUrl=${encodeURIComponent("/notifications")}`
-                )
-              }
-              className="mt-4 rounded-xl bg-black px-4 py-2.5 text-sm font-extrabold text-black hover:bg-black/90"
-            >
-              Нэвтрэх
-            </button>
           </div>
         )}
 
-        {/* List */}
         {!!user && (
           <>
             {filtered.length === 0 ? (
               <div className="p-6">
                 <div className="text-[15px] font-extrabold text-black">
-                  {tab === "unread"
-                    ? "Уншаагүй мэдэгдэл алга."
-                    : "Одоогоор мэдэгдэл алга."}
+                  {tab === "unread" ? "Уншаагүй мэдэгдэл алга." : "Одоогоор мэдэгдэл алга."}
                 </div>
                 <div className="mt-1 text-sm text-black/60">
                   Шинэ зүйл гарвал энд хамгийн дээр нэмэгдэнэ.
@@ -236,27 +212,25 @@ export default function NotificationsPage() {
             ) : (
               <div className="divide-y divide-black/10">
                 {filtered.map((n) => {
-                  const isUnread =
-                    !(n as any)?.readAt && (n as any)?.read !== true;
+                  const isUnread = n.read !== true;
                   const time = fmtTime(n.createdAt);
-                  const href = resolveHref(n);
 
                   return (
                     <button
                       key={n.id}
                       type="button"
-                      onClick={() => markReadAndGo(n)}
+                      onClick={() => markRead(n)}
+                      disabled={!isUnread || busyId === n.id}
                       className={cn(
                         "w-full text-left px-5 py-4 transition",
-                        "hover:bg-black/[0.03]",
+                        isUnread ? "hover:bg-black/[0.03] cursor-pointer" : "cursor-default",
                         busyId === n.id && "opacity-70"
                       )}
                     >
                       <div className="flex items-start gap-3">
-                        {/* unread dot */}
                         <div
                           className={cn(
-                            "mt-1.5 h-2.5 w-2.5 rounded-full",
+                            "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
                             isUnread ? "bg-blue-600" : "bg-black/20"
                           )}
                         />
@@ -264,30 +238,23 @@ export default function NotificationsPage() {
                           <div className="flex items-start justify-between gap-3">
                             <div
                               className={cn(
-                                "truncate text-[15px] font-extrabold",
-                                isUnread ? "text-black" : "text-black/80"
+                                "text-[15px] font-extrabold",
+                                isUnread ? "text-black" : "text-black/50"
                               )}
                             >
                               {n.title || "Мэдэгдэл"}
                             </div>
-                            {time ? (
+                            {time && (
                               <div className="shrink-0 text-[12px] font-semibold text-black/45">
                                 {time}
                               </div>
-                            ) : null}
+                            )}
                           </div>
-
-                          {n.body ? (
+                          {n.body && (
                             <div className="mt-1 line-clamp-2 text-[13px] text-black/60">
                               {n.body}
                             </div>
-                          ) : null}
-
-                          {href ? (
-                            <div className="mt-2 text-[12px] font-extrabold text-black/55">
-                              Дараад нээх ›
-                            </div>
-                          ) : null}
+                          )}
                         </div>
                       </div>
                     </button>

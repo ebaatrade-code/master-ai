@@ -7,13 +7,10 @@ import {
   type QPayInvoiceCreateReq,
 } from "@/lib/qpay";
 
-// ✅ таны проект дээр adminAuth/adminDb нь "function" байж байгаа (=> instance буцаана)
 import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
 import { FieldValue } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
-
-// ✅ App Router caching хамгаалалт
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -34,11 +31,6 @@ function isAmount(x: unknown): x is number {
   return typeof x === "number" && Number.isFinite(x) && x > 0 && x < 1_000_000_000;
 }
 
-/**
- * ✅ adminAuth/adminDb чинь instance эсвэл function байж болно.
- * - зарим проект: export const adminAuth = getAuth();
- * - таны проект: export const adminAuth = () => getAuth();
- */
 function getAdminAuth(): any {
   const a: any = adminAuth as any;
   return typeof a === "function" ? a() : a;
@@ -55,7 +47,7 @@ async function requireUid(req: Request) {
 
   try {
     const aa = getAdminAuth();
-    const decoded = await aa.verifyIdToken(m[1]);
+    const decoded = await aa.verifyIdToken(m[1], true); // true = check revocation
     return decoded?.uid || null;
   } catch {
     return null;
@@ -89,6 +81,14 @@ async function resolveAmountFromCourse(courseId: string) {
     return { ok: false as const, amount: null as any, error: "Invalid course price" };
   }
   return { ok: true as const, amount: Math.round(price) };
+}
+
+function normalizeInvoiceStatus(v: any): "PENDING" | "PAID" | "CANCELLED" | "EXPIRED" {
+  const s = String(v || "").trim().toUpperCase();
+  if (s === "PAID") return "PAID";
+  if (s === "CANCELLED") return "CANCELLED";
+  if (s === "EXPIRED") return "EXPIRED";
+  return "PENDING";
 }
 
 export async function POST(req: Request) {
@@ -138,17 +138,25 @@ export async function POST(req: Request) {
       return noStoreJson({ error: "Invalid description" }, 400);
     }
 
-    // ✅ Firestore existing invoice check (idempotent)
     const db = getAdminDb();
     const invRef = db.collection("invoices").doc(ref);
+    const payRef = db.collection("qpayPayments").doc(ref);
+
+    // ✅ Existing invoice check + ownership guard
     const snap = await invRef.get();
     const existing = snap.exists ? (snap.data() as any) : null;
+
+    if (existing?.uid && String(existing.uid) !== uid) {
+      // ✅ critical: бусдын ref ашиглах боломжийг хаана
+      return noStoreJson({ error: "Forbidden" }, 403);
+    }
 
     const existingAmount = typeof existing?.amount === "number" ? existing.amount : num(existing?.amount);
     const existingQpayInvoiceId = String(existing?.qpay?.qpayInvoiceId || "").trim();
     const existingQr = String(existing?.qpay?.qrImageDataUrl || "").trim();
     const existingUrls = Array.isArray(existing?.qpay?.urls) ? existing.qpay.urls : [];
     const existingShortUrl = String(existing?.qpay?.shortUrl || "").trim();
+    const existingStatus = normalizeInvoiceStatus(existing?.status);
 
     const canReuse =
       existingAmount === amount &&
@@ -156,6 +164,22 @@ export async function POST(req: Request) {
       (!!existingQr || existingUrls.length > 0 || !!existingShortUrl);
 
     if (canReuse) {
+      // ✅ Ensure qpayPayments sync exists (callback route үүн дээр ажилладаг)
+      await payRef.set(
+        {
+          uid,
+          courseId,
+          amount,
+          status: existingStatus,
+          paid: existingStatus === "PAID",
+          qpayInvoiceId: existingQpayInvoiceId,
+          senderInvoiceNo: existing?.qpay?.senderInvoiceNo ?? null,
+          updatedAt: FieldValue.serverTimestamp(),
+          createdAt: existing?.createdAt ?? FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
       return noStoreJson({
         ok: true,
         reused: true,
@@ -171,6 +195,7 @@ export async function POST(req: Request) {
         senderInvoiceNo: existing?.qpay?.senderInvoiceNo ?? null,
         orderId: existing?.qpay?.senderInvoiceNo ?? ref,
         callbackUrl: existing?.qpay?.callbackUrl ?? null,
+        status: existingStatus,
       });
     }
 
@@ -184,12 +209,15 @@ export async function POST(req: Request) {
 
     const orderId = String(json.orderId ?? sender_invoice_no).slice(0, 80);
 
+    // ✅ callback secret (optional) – хэрвээ .env дээр тохируулсан бол нэмээд илгээнэ
+    const cbSecret = (process.env.QPAY_CALLBACK_SECRET || "").trim();
+    const cbSecretQ = cbSecret ? `&s=${encodeURIComponent(cbSecret)}` : "";
+
+    // Зөвхөн ref + s (QPay callback_url max 255 chars)
     const callback_url =
       `${siteUrl.replace(/\/$/, "")}/api/qpay/callback` +
-      `?orderId=${encodeURIComponent(orderId)}` +
-      `&courseId=${encodeURIComponent(String(courseId ?? ""))}` +
-      `&uid=${encodeURIComponent(String(uid ?? ""))}` +
-      `&ref=${encodeURIComponent(ref)}`;
+      `?ref=${encodeURIComponent(ref)}` +
+      cbSecretQ;
 
     const payload: QPayInvoiceCreateReq = {
       invoice_code: invoiceCode,
@@ -212,12 +240,16 @@ export async function POST(req: Request) {
     const shortUrl = extractShortUrl(urls);
     const qrImageDataUrl = toDataUrlPng(inv.qr_image ?? null);
 
+    const nextStatus: "PENDING" | "PAID" = existingStatus === "PAID" ? "PAID" : "PENDING";
+
+    // ✅ invoices doc (UI/history)
     await invRef.set(
       {
         uid,
         courseId,
         amount,
-        status: existing?.status || "pending",
+        status: nextStatus,
+        ...(snap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
         updatedAt: FieldValue.serverTimestamp(),
         qpay: {
           ref,
@@ -229,6 +261,22 @@ export async function POST(req: Request) {
           urls,
           callbackUrl: callback_url,
         },
+      },
+      { merge: true }
+    );
+
+    // ✅ qpayPayments doc (callback uses this)
+    await payRef.set(
+      {
+        uid,
+        courseId,
+        amount,
+        status: nextStatus,
+        paid: nextStatus === "PAID",
+        qpayInvoiceId: inv.invoice_id,
+        senderInvoiceNo: sender_invoice_no,
+        ...(snap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+        updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
@@ -248,6 +296,7 @@ export async function POST(req: Request) {
       senderInvoiceNo: sender_invoice_no,
       orderId,
       callbackUrl: callback_url,
+      status: nextStatus,
     });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "Server error";

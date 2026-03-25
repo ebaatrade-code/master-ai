@@ -1,0 +1,269 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Auth helpers ─────────────────────────────────────────────────────
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    // get() нэг удаа — Firebase same-path read-ийг cache хийдэг
+    function userDocData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && userDocData().role == "admin";
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // ── Course access ─────────────────────────────────────────────────────
+    // Нэг get()-ээр admin болон purchase хоёуланг шалгана
+    function hasCourseAccess(courseId) {
+      let u = userDocData();
+      return signedIn() && (
+        u.role == "admin"
+        || (
+          u.purchasedCourseIds is list
+          && courseId in u.purchasedCourseIds
+          && (
+            !(u.purchases is map)
+            || u.purchases[courseId] == null
+            || !(u.purchases[courseId] is map)
+            || !(u.purchases[courseId].expiresAt is timestamp)
+            || u.purchases[courseId].expiresAt > request.time
+          )
+        )
+      );
+    }
+
+    function lessonReadable(courseId) {
+      let u = userDocData();
+      return signedIn() && (
+        u.role == "admin"
+        || (
+          exists(/databases/$(database)/documents/courses/$(courseId))
+          && get(/databases/$(database)/documents/courses/$(courseId)).data.isPublished == true
+          && u.purchasedCourseIds is list
+          && courseId in u.purchasedCourseIds
+          && (
+            !(u.purchases is map)
+            || u.purchases[courseId] == null
+            || !(u.purchases[courseId] is map)
+            || !(u.purchases[courseId].expiresAt is timestamp)
+            || u.purchases[courseId].expiresAt > request.time
+          )
+        )
+      );
+    }
+
+    // ── User document rules ───────────────────────────────────────────────
+    function userEditableFields() {
+      return request.resource.data
+        .diff(resource.data)
+        .changedKeys()
+        .hasOnly(["name", "phone", "lastActiveAt", "updatedAt"]);
+    }
+
+    // AuthProvider.ensureUserDoc()-ийн бичдэг бүх field-ийг зөвшөөрнө
+    // Гэхдээ: role="admin" өгөх, purchase дүүргэх боломжгүй
+    function validUserCreate(uid) {
+      let d = request.resource.data;
+      return signedIn()
+        && request.auth.uid == uid
+        && d.email == request.auth.token.email
+        // role зөвхөн "user" байж болно — "admin" өөрөө авах боломжгүй
+        && (!("role" in d) || d.role == "user")
+        // purchase эхлэлд хоосон байх ёстой
+        && (!("purchasedCourseIds" in d) || d.purchasedCourseIds == [])
+        && (!("purchases" in d) || d.purchases.size() == 0)
+        // accountStatus зөвхөн "active" байж болно
+        && (!("accountStatus" in d) || d.accountStatus == "active")
+        // name/phone урт хязгаар
+        && (!("name" in d) || (d.name is string && d.name.size() <= 120))
+        && (!("phone" in d) || d.phone == null || (d.phone is string && d.phone.size() <= 30));
+    }
+
+    function validUserUpdate(uid) {
+      let d = request.resource.data;
+      return isOwner(uid)
+        && userEditableFields()
+        && d.email == resource.data.email
+        && (!("name" in d)
+            || (d.name is string && d.name.size() > 0 && d.name.size() <= 120))
+        && (!("phone" in d)
+            || d.phone == null
+            || (d.phone is string && d.phone.size() <= 30));
+    }
+
+    /* =========================
+       SUPPORT REQUESTS
+    ========================= */
+    match /supportRequests/{id} {
+      allow create: if signedIn()
+        && isVerifiedEmail()
+        && request.resource.data.keys().hasOnly([
+          "uid", "email", "phone", "message", "status", "adminNote",
+          "imageUrls", "imagePaths", "createdAt", "handledAt", "updatedAt"
+        ])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 6
+        && request.resource.data.phone.size() <= 20
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000
+        && request.resource.data.status == "OPEN"
+        && (!("adminNote" in request.resource.data)
+            || request.resource.data.adminNote == null)
+        && "createdAt" in request.resource.data
+        && request.resource.data.createdAt is timestamp
+        && (!("handledAt" in request.resource.data)
+            || request.resource.data.handledAt == null)
+        && (!("imageUrls" in request.resource.data)
+            || (request.resource.data.imageUrls is list
+                && request.resource.data.imageUrls.size() <= 3))
+        && (!("imagePaths" in request.resource.data)
+            || (request.resource.data.imagePaths is list
+                && request.resource.data.imagePaths.size() <= 3));
+
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    /* =========================
+       USERS
+    ========================= */
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if validUserCreate(uid);
+      allow update: if isAdmin() || validUserUpdate(uid);
+      allow delete: if isAdmin();
+
+      // Notifications subcollection (users/{uid}/notifications/{notifId})
+      match /notifications/{notifId} {
+        allow read: if isAdmin() || isOwner(uid);
+        // Хэрэглэгч зөвхөн read=true болгож болно
+        allow update: if isOwner(uid)
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(["read"])
+          && request.resource.data.read == true;
+        allow create, delete: if isAdmin();
+      }
+    }
+
+    /* =========================
+       NOTIFICATIONS (top-level)
+       Admin API route: notifications/{uid}/items/{id}
+    ========================= */
+    match /notifications/{uid}/items/{notifId} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow update: if (signedIn() && request.auth.uid == uid)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(["read"])
+        && request.resource.data.read == true;
+      allow create, delete: if isAdmin();
+    }
+
+    /* =========================
+       COURSES
+    ========================= */
+    match /courses/{courseId} {
+      // list-д зөвхөн isPublished==true query-г зөвшөөрнө (client-аас where тавих шаардлагатай)
+      allow get, list: if isAdmin() || resource.data.isPublished == true;
+      allow create, update, delete: if isAdmin();
+
+      match /lessons/{lessonId} {
+        allow get, list: if lessonReadable(courseId);
+        allow create, update, delete: if isAdmin();
+      }
+    }
+
+    /* =========================
+       PURCHASES
+    ========================= */
+    match /purchases/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    /* =========================
+       INVOICES
+    ========================= */
+    match /invoices/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    /* =========================
+       QPAY PAYMENTS
+    ========================= */
+    match /qpayPayments/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    /* =========================
+       PAYMENT ISSUES
+    ========================= */
+    match /paymentIssues/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    /* =========================
+       REVENUE LEDGER
+       Зөвхөн Admin SDK бичнэ — client read-г Admin-д зөвшөөрнө
+    ========================= */
+    match /revenueLedger/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    /* =========================
+       SITE CONFIG
+    ========================= */
+    match /siteConfig/{docId} {
+      allow get: if docId == "public" || isAdmin();
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    /* =========================
+       ANALYTICS EVENTS
+    ========================= */
+    match /analyticsEvents/{id} {
+      allow read: if isAdmin();
+      allow create: if signedIn()
+        && isVerifiedEmail()
+        && request.resource.data.type == "banner_click"
+        && request.resource.data.keys().hasOnly([
+          "type", "where", "bannerKey", "href", "path", "createdAt"
+        ])
+        && request.resource.data.where in ["cta", "text"]
+        && request.resource.data.bannerKey is string
+        && request.resource.data.bannerKey.size() <= 200
+        && request.resource.data.href is string
+        && request.resource.data.href.size() <= 2000
+        && request.resource.data.path is string
+        && request.resource.data.path.size() <= 1000
+        // int (Date.now()) эсвэл timestamp хоёуланг зөвшөөрнө
+        && (request.resource.data.createdAt is int
+            || request.resource.data.createdAt is timestamp);
+      allow update, delete: if false;
+    }
+
+    /* =========================
+       DENY ALL (catch-all)
+    ========================= */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

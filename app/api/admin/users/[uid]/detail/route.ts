@@ -132,8 +132,8 @@ export async function GET(
 
     // ✅ Issues
     const issuesSnap = await db
-      .collection("payment_issues")
-      .where("userId", "==", uid)
+      .collection("paymentIssues")
+      .where("uid", "==", uid)
       .orderBy("createdAt", "desc")
       .limit(100)
       .get()

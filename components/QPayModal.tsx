@@ -8,8 +8,7 @@ import { useAuth } from "@/components/AuthProvider";
 type Deeplink = { name?: string; description?: string; logo?: string; link: string };
 
 type QPayData = {
-  ref: string; // invoices docId (invoiceId)
-  // ✅ OPTIONAL: invoices doc дээр хадгалагдсан amount байж болно
+  ref: string; // invoices/qpayPayments docId (invoiceDocId)
   amount?: number | null;
 
   qrImageDataUrl?: string | null;
@@ -59,6 +58,38 @@ function initials(name?: string) {
   return (a + b).toUpperCase();
 }
 
+function num(x: unknown) {
+  if (typeof x === "number") return x;
+  if (typeof x === "string" && x.trim()) return Number(x);
+  return NaN;
+}
+
+function isSafeHttpUrl(v: unknown) {
+  const s = String(v || "").trim();
+  if (!s) return false;
+  return /^https?:\/\//i.test(s);
+}
+
+function normalizeSafeUrls(input: unknown): Deeplink[] {
+  if (!Array.isArray(input)) return [];
+
+  const out: Deeplink[] = [];
+
+  for (const item of input.slice(0, 20)) {
+    const link = String((item as any)?.link || "").trim();
+    if (!isSafeHttpUrl(link)) continue;
+
+    out.push({
+      name: String((item as any)?.name || "").trim().slice(0, 120),
+      description: String((item as any)?.description || "").trim().slice(0, 180),
+      logo: String((item as any)?.logo || "").trim().slice(0, 1200),
+      link,
+    });
+  }
+
+  return out;
+}
+
 export default function QPayModal({
   open,
   onClose,
@@ -67,7 +98,6 @@ export default function QPayModal({
   amount,
   courseTitle,
   courseThumbUrl,
-  // ✅ NEW (optional): courseId дамжуулж өгвөл сервер course.price-оос amount resolve хийнэ
   courseId,
 }: {
   open: boolean;
@@ -86,10 +116,24 @@ export default function QPayModal({
   const [status, setStatus] = useState<"idle" | "checking" | "paid">("idle");
   const [lastErr, setLastErr] = useState<string | null>(null);
 
-  // ✅ Local “self-healed” qpay data (props-оос тусдаа)
+  // ✅ Active ref (checkout/create → invoiceDocId-г энд хадгална)
+  const [activeRef, setActiveRef] = useState<string>("");
+
+  // ✅ Live qpay data (props-оос тусдаа)
   const [liveQrDataUrl, setLiveQrDataUrl] = useState<string | null>(null);
   const [liveUrls, setLiveUrls] = useState<Deeplink[]>([]);
   const [liveShortUrl, setLiveShortUrl] = useState<string | null>(null);
+
+  // ✅ Live meta (server truth)
+  const [liveAmount, setLiveAmount] = useState<number | null>(null);
+  const [liveDurationLabel, setLiveDurationLabel] = useState<string | null>(null);
+  const [liveDurationDays, setLiveDurationDays] = useState<number | null>(null);
+
+  const displayAmount = useMemo(() => {
+    const v = liveAmount;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+    return amount;
+  }, [liveAmount, amount]);
 
   // ✅ Portal mount guard
   const [mounted, setMounted] = useState(false);
@@ -113,15 +157,26 @@ export default function QPayModal({
   // ✅ Reset live state when opening / ref changes
   useEffect(() => {
     if (!open) return;
+
+    setStatus("idle");
     setLiveQrDataUrl(null);
     setLiveUrls([]);
     setLiveShortUrl(null);
+    setLiveAmount(null);
+    setLiveDurationLabel(null);
+    setLiveDurationDays(null);
     setLastErr(null);
+
+    // activeRef-г эхлээд props data.ref-ээс авна (хэрвээ ирсэн бол)
+    const r = String(data?.ref || "").trim();
+    setActiveRef(r);
   }, [open, data?.ref]);
 
   const durationText = useMemo(() => {
-    return formatDuration(data?.durationLabel ?? null, data?.durationDays ?? null);
-  }, [data?.durationLabel, data?.durationDays]);
+    const lbl = liveDurationLabel ?? data?.durationLabel ?? null;
+    const days = liveDurationDays ?? data?.durationDays ?? null;
+    return formatDuration(lbl, days);
+  }, [data?.durationLabel, data?.durationDays, liveDurationLabel, liveDurationDays]);
 
   const qrSrc = useMemo(() => {
     // 1) live (API-аас нөхөгдсөн)
@@ -139,91 +194,128 @@ export default function QPayModal({
 
   const bankUrls = useMemo(() => {
     const fromLive = liveUrls.length ? liveUrls : [];
-    if (fromLive.length) return fromLive;
-    return Array.isArray(data?.urls) ? data!.urls! : [];
+    if (fromLive.length) return normalizeSafeUrls(fromLive);
+    return normalizeSafeUrls(data?.urls);
   }, [data?.urls, liveUrls]);
 
+  const shortUrl = useMemo(() => {
+    const s = String(liveShortUrl || data?.shortUrl || "").trim();
+    return isSafeHttpUrl(s) ? s : "";
+  }, [liveShortUrl, data?.shortUrl]);
+
   // =========================
-  // ✅ SELF-HEAL:
-  // - QR/data missing
-  // - OR invoice amount != UI amount  -> create-invoice (хуучин PENDING reuse асуудлыг шийднэ)
+  // ✅ STANDARD: ensure invoice via /api/qpay/checkout/create
+  // - qpayPayments + invoices хоёуланг үүсгэнэ
+  // - invoiceDocId-г activeRef болгоно (polling/check үүгээр явна)
   // =========================
   const ensuringRef = useRef(false);
+  // ✅ Нэг open session дотор зөвхөн нэг удаа create хийнэ
+  const ensuredForOpenRef = useRef(false);
+
+  // ✅ Modal хаагдах үед reset
+  useEffect(() => {
+    if (!open) {
+      ensuredForOpenRef.current = false;
+      ensuringRef.current = false;
+    }
+  }, [open]);
 
   useEffect(() => {
-    if (!open || !data?.ref) return;
+    if (!open) return;
     if (!user) return;
 
-    const hasAnyBank = (Array.isArray(data?.urls) && data!.urls!.length > 0) || liveUrls.length > 0;
-    const hasQr = !!qrSrc;
+    const cid = String(courseId || "").trim();
+    if (!cid) return; // courseId байхгүй бол checkout/create ажиллахгүй
 
-    // ✅ NEW: invoices doc дээр хадгалагдсан amount байвал UI amount-тай тулгана
-    const invoiceAmount =
-      typeof data?.amount === "number" && Number.isFinite(data.amount) ? data.amount : null;
-
-    const amountMismatch = invoiceAmount !== null && invoiceAmount !== amount;
-
-    const shouldEnsure = !hasQr || !hasAnyBank || amountMismatch;
-
-    if (!shouldEnsure) return;
+    // ✅ Энэ open session-д аль хэдийн create хийсэн бол дахин хийхгүй
+    if (ensuredForOpenRef.current) return;
     if (ensuringRef.current) return;
 
     ensuringRef.current = true;
+    ensuredForOpenRef.current = true;
+    let cancelled = false;
+    const ac = new AbortController();
 
     const run = async () => {
       try {
         setLastErr(null);
 
         const idToken = await user.getIdToken();
-        const r = await fetch("/api/qpay/create-invoice", {
+        const r = await fetch("/api/qpay/checkout/create", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
           body: JSON.stringify({
-            ref: data.ref,
-            uid: user.uid,
-
-            // ✅ backwards compatible (server courseId байвал amount-ыг server талд resolve хийнэ)
-            amount,
-            courseId: (courseId || undefined),
-
+            courseId: cid,
+            // ✅ amount явуулахгүй. Server course.price-оос өөрөө уншина.
             description: `Master AI · ${courseTitle}`,
           }),
+          signal: ac.signal,
         });
 
         const j = await r.json().catch(() => ({}));
 
-        if (!r.ok) {
-          setLastErr(j?.error || j?.message || `Invoice create failed (${r.status})`);
+        if (cancelled) return;
+
+        if (!r.ok || !j?.ok) {
+          setLastErr(j?.message || j?.error || `Checkout create failed (${r.status})`);
           ensuringRef.current = false;
           return;
         }
 
-        // ✅ Live state update (UI өөрчлөхгүйгээр QR орж ирнэ)
+        // ✅ alreadyPurchased бол modal-г гацаахгүй
+        if (j?.alreadyPurchased === true) {
+          setStatus("paid");
+          ensuringRef.current = false;
+          onPaid();
+          return;
+        }
+
+        // ✅ invoiceDocId → activeRef (энэ ref-ээр check хийнэ)
+        const newRef = String(j?.invoiceDocId || j?.invoiceDocID || j?.ref || "").trim();
+        if (newRef) setActiveRef(newRef);
+
+        // ✅ Live state update (UI өөрчлөхгүйгээр QR/urls орж ирнэ)
         const qrid = String(j?.qrImageDataUrl || "");
         if (qrid && qrid.startsWith("data:image/")) setLiveQrDataUrl(qrid);
 
-        const urls = Array.isArray(j?.urls) ? j.urls : [];
+        const urls = normalizeSafeUrls(j?.urls);
         if (urls.length) setLiveUrls(urls);
 
         const su = String(j?.shortUrl || "").trim();
-        if (su) setLiveShortUrl(su);
+        if (isSafeHttpUrl(su)) setLiveShortUrl(su);
+
+        const a = num(j?.amount);
+        if (Number.isFinite(a) && a > 0) setLiveAmount(Math.round(a));
+
+        const dl = String(j?.durationLabel || "").trim();
+        if (dl) setLiveDurationLabel(dl);
+
+        const dd = num(j?.durationDays);
+        if (Number.isFinite(dd) && dd > 0) setLiveDurationDays(Math.round(dd));
 
         ensuringRef.current = false;
       } catch (e: any) {
-        setLastErr(e?.message || "Invoice create error");
+        if (!cancelled && !/aborted|abort/i.test(String(e?.message || ""))) {
+          setLastErr(e?.message || "Checkout create error");
+        }
         ensuringRef.current = false;
       }
     };
 
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, data?.ref, user, amount, courseTitle, courseId, qrSrc, liveUrls.length, data?.amount]);
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      // ✅ ensuredForOpenRef-г reset хийхгүй — дахин create хийхгүй байхын тулд
+    };
+  }, [open, user, courseId, courseTitle, onPaid]);
 
   // =========================
-  // ✅ Polling — unchanged (checks paid)
+  // ✅ Polling — uses /api/qpay/checkout/check with activeRef
   // =========================
   const stopRef = useRef(false);
   const inFlightRef = useRef(false);
@@ -231,7 +323,11 @@ export default function QPayModal({
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!open || !data?.ref) return;
+    if (!open) return;
+    if (!user) return;
+
+    const refToCheck = String(activeRef || "").trim();
+    if (!refToCheck) return;
 
     stopRef.current = false;
     inFlightRef.current = false;
@@ -273,10 +369,10 @@ export default function QPayModal({
           return;
         }
 
-        if (!user) {
-          setLastErr("Login хийгээгүй байна.");
+        const ar = String(activeRef || "").trim();
+        if (!ar) {
           setStatus("idle");
-          scheduleNext(jitter(5000));
+          scheduleNext(jitter(2000));
           return;
         }
 
@@ -299,8 +395,9 @@ export default function QPayModal({
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ ref: data.ref }),
+          body: JSON.stringify({ ref: ar }),
           signal: ac.signal,
+          cache: "no-store",
         });
 
         const j = await r.json().catch(() => ({}));
@@ -355,9 +452,13 @@ export default function QPayModal({
       stopRef.current = true;
       clearAll();
     };
-  }, [open, data?.ref, user, onPaid]);
+  }, [open, user, activeRef, onPaid]);
 
-  if (!open || !data || !mounted) return null;
+  if (!open || !mounted) return null;
+
+  // data null байж болох ч UI-г эвдэхгүйгээр fallback харуулна
+  const safeTitle = courseTitle || "—";
+  const safeThumb = courseThumbUrl ?? null;
 
   const modal = (
     <div className="fixed inset-0 z-[1000]" aria-modal="true" role="dialog">
@@ -425,15 +526,18 @@ export default function QPayModal({
 
                 <div className="mt-4 text-[12px] text-neutral-500">Нийт төлөх дүн:</div>
                 <div className="text-[28px] font-extrabold tracking-tight text-neutral-900">
-                  {formatMnt(amount)}₮
+                  {formatMnt(displayAmount)}₮
                 </div>
 
+                {/* ✅ Mobile дээр хуучин текст, Desktop дээр шинэ текст */}
                 <div className="mt-3 w-full rounded-xl bg-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
-                  Та дурын банкаа сонгож ороод төлбөрөө төлөх боломжтой.
+                  <span className="md:hidden">Та дурын банкаа сонгож ороод төлбөрөө төлөх боломжтой.</span>
+                  <span className="hidden md:inline">Та дээрх QPAY - г уншуулаад төлбөрөө төлөх боломжтой.</span>
                 </div>
 
                 {bankUrls.length ? (
-                  <div className="mt-4 w-full">
+                  // ✅ MOBILE дээр л харагдана. DESKTOP (md↑) дээр бүр нуугдана.
+                  <div className="mt-4 w-full md:hidden">
                     <div className="grid grid-cols-4 gap-3">
                       {bankUrls.slice(0, 20).map((u, idx) => {
                         const label = u.name || "Bank";
@@ -442,7 +546,7 @@ export default function QPayModal({
                             key={`${u.link}-${idx}`}
                             href={u.link}
                             target="_blank"
-                            rel="noreferrer"
+                            rel="noopener noreferrer"
                             className="
                               group flex flex-col items-center justify-center
                               rounded-2xl border border-neutral-200 bg-white
@@ -472,6 +576,17 @@ export default function QPayModal({
                       </div>
                     ) : null}
                   </div>
+                ) : shortUrl ? (
+                  <div className="mt-4 w-full md:hidden">
+                    <a
+                      href={shortUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-center text-[13px] font-semibold text-neutral-800"
+                    >
+                      QPay холбоосоор нээх
+                    </a>
+                  </div>
                 ) : (
                   <div className="mt-4 text-[13px] text-neutral-500">Bank deeplink олдсонгүй.</div>
                 )}
@@ -485,10 +600,10 @@ export default function QPayModal({
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-11 w-11 overflow-hidden rounded-xl bg-neutral-200 shrink-0">
-                      {courseThumbUrl ? (
+                      {safeThumb ? (
                         <Image
-                          src={courseThumbUrl}
-                          alt={courseTitle}
+                          src={safeThumb}
+                          alt={safeTitle}
                           width={44}
                           height={44}
                           className="h-11 w-11 object-cover"
@@ -498,26 +613,26 @@ export default function QPayModal({
 
                     <div className="min-w-0">
                       <div className="truncate text-[14px] font-bold text-neutral-900 md:text-[16px]">
-                        {courseTitle}
+                        {safeTitle}
                       </div>
                       <div className="text-[12px] text-neutral-500 md:text-[13px]">{durationText}</div>
                     </div>
                   </div>
 
                   <div className="text-[14px] font-extrabold text-neutral-900 md:text-[16px] md:font-bold">
-                    {formatMnt(amount)}₮
+                    {formatMnt(displayAmount)}₮
                   </div>
                 </div>
 
                 <div className="hidden md:block mt-4 space-y-2 text-[14px] sm:text-[15px]">
                   <div className="flex items-center justify-between">
                     <div className="font-bold text-neutral-900">ҮНЭ</div>
-                    <div className="font-semibold text-neutral-900">{formatMnt(amount)}₮</div>
+                    <div className="font-semibold text-neutral-900">{formatMnt(displayAmount)}₮</div>
                   </div>
 
                   <div className="flex items-center justify-between">
                     <div className="font-bold text-neutral-900">Нийт дүн</div>
-                    <div className="font-semibold text-neutral-900">{formatMnt(amount)}₮</div>
+                    <div className="font-semibold text-neutral-900">{formatMnt(displayAmount)}₮</div>
                   </div>
                 </div>
               </div>

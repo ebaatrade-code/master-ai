@@ -235,6 +235,11 @@ export default function HeroAgentSection({
 
               <li className="flex items-start gap-3 text-black md:text-black">
                 <span className="mt-[6px] text-black md:text-black">✔</span>
+                <span>ТАНЫ ЦАГ ХУГАЦАА, МӨНГӨ САНХҮҮГ ЧИНЬ ХЭМНЭХ AI-г ЗААНА</span>
+              </li>
+
+              <li className="flex items-start gap-3 text-black md:text-black">
+                <span className="mt-[6px] text-black md:text-black">✔</span>
                 <span>АНГЛИ ХЭЛ ШААРДЛАГАГҮЙ</span>
               </li>
 

@@ -1,11 +1,12 @@
 // FILE: app/api/qpay/deeplink/create/route.ts
 import { NextResponse } from "next/server";
 import { qpayCreateInvoice, extractShortUrl, toDataUrlPng, type QPayInvoiceCreateReq } from "@/lib/qpay";
+import { adminAuth, adminDb } from "@/lib/firebaseAdmin.server";
 
 export const runtime = "nodejs";
 
 function noStoreJson(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }
 
 function mustEnv(name: string) {
@@ -14,39 +15,67 @@ function mustEnv(name: string) {
   return v;
 }
 
-function isAmount(x: unknown): x is number {
-  return typeof x === "number" && Number.isFinite(x) && x > 0 && x < 1_000_000_000;
+function isSafeCourseId(v: string) {
+  return typeof v === "string" && /^[A-Za-z0-9_-]{1,120}$/.test(v);
 }
 
 export async function POST(req: Request) {
   try {
+    // ── Auth: Bearer token шаардана ──────────────────────────────────────
+    const authHeader = req.headers.get("authorization") || "";
+    const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    if (!idToken) return noStoreJson({ ok: false, error: "UNAUTHENTICATED" }, 401);
+
+    let uid: string;
+    try {
+      const decoded = await adminAuth().verifyIdToken(idToken, true);
+      uid = decoded.uid;
+    } catch {
+      return noStoreJson({ ok: false, error: "INVALID_TOKEN" }, 401);
+    }
+
+    // ── Body parse ───────────────────────────────────────────────────────
+    const json = (await req.json().catch(() => null)) as
+      | { courseId?: unknown; description?: unknown; orderId?: unknown; senderInvoiceNo?: unknown }
+      | null;
+
+    if (!json) return noStoreJson({ ok: false, error: "Invalid JSON" }, 400);
+
+    const courseId = String(json.courseId ?? "").trim();
+    if (!isSafeCourseId(courseId)) return noStoreJson({ ok: false, error: "Invalid courseId" }, 400);
+
+    // ── Firestore-оос үнийг татна (client amount-г ХЭЗЭЭ Ч итгэхгүй) ────
+    const db = adminDb();
+    const courseSnap = await db.collection("courses").doc(courseId).get();
+    if (!courseSnap.exists) return noStoreJson({ ok: false, error: "Course not found" }, 404);
+
+    const courseData = courseSnap.data() as any;
+    if (courseData?.isPublished !== true) return noStoreJson({ ok: false, error: "Course not available" }, 403);
+
+    const amount = Number(courseData?.price ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return noStoreJson({ ok: false, error: "Course price not set", message: "Курсын үнэ тохируулаагүй байна." }, 400);
+    }
+
+    // ── Env ─────────────────────────────────────────────────────────────
     const siteUrl = mustEnv("SITE_URL");
     const invoiceCode = mustEnv("QPAY_INVOICE_CODE");
     const receiverCode = mustEnv("QPAY_INVOICE_RECEIVER_CODE");
     const branchCode = process.env.QPAY_BRANCH_CODE || "ONLINE";
 
-    const json = (await req.json().catch(() => null)) as
-      | { amount?: unknown; description?: unknown; orderId?: unknown; senderInvoiceNo?: unknown; courseId?: unknown; uid?: unknown }
-      | null;
+    const description = String(json.description ?? courseData?.title ?? "Master AI payment")
+      .replace(/[\u0000-\u001F]/g, " ").trim().slice(0, 140) || "Master AI payment";
 
-    if (!json) return noStoreJson({ error: "Invalid JSON" }, 400);
-
-    const amount = typeof json.amount === "string" ? Number(json.amount) : json.amount;
-    if (!isAmount(amount)) return noStoreJson({ error: "Invalid amount" }, 400);
-
-    const description = String(json.description ?? "Master AI payment").trim();
-    if (description.length < 2 || description.length > 140) return noStoreJson({ error: "Invalid description" }, 400);
-
-    const senderInvoiceNoRaw = String(json.senderInvoiceNo ?? json.orderId ?? Date.now());
+    const senderInvoiceNoRaw = String(json.senderInvoiceNo ?? json.orderId ?? `${uid}-${courseId}-${Date.now()}`);
     const sender_invoice_no = senderInvoiceNoRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || String(Date.now());
-
     const orderId = String(json.orderId ?? sender_invoice_no).slice(0, 80);
 
+    // Callback URL — зөвхөн ref + s (QPay max 255 chars)
+    const cbSecret = (process.env.QPAY_CALLBACK_SECRET || "").trim();
     const callback_url =
       `${siteUrl.replace(/\/$/, "")}/api/qpay/callback` +
-      `?orderId=${encodeURIComponent(orderId)}` +
-      `&courseId=${encodeURIComponent(String(json.courseId ?? ""))}` +
-      `&uid=${encodeURIComponent(String(json.uid ?? ""))}`;
+      `?ref=${encodeURIComponent(orderId)}` +
+      (cbSecret ? `&s=${encodeURIComponent(cbSecret)}` : "");
 
     const payload: QPayInvoiceCreateReq = {
       invoice_code: invoiceCode,
@@ -54,7 +83,7 @@ export async function POST(req: Request) {
       invoice_receiver_code: receiverCode,
       sender_branch_code: branchCode,
       invoice_description: description,
-      amount,
+      amount,                    // ← Firestore-оос татсан үнэ
       callback_url,
       allow_partial: false,
       allow_exceed: false,
@@ -65,21 +94,30 @@ export async function POST(req: Request) {
 
     const inv = await qpayCreateInvoice(payload);
 
+    // qpayPayments-д бичнэ (callback verify хийх зорилгоор)
+    await db.collection("qpayPayments").doc(orderId).set({
+      uid,
+      courseId,
+      amount,
+      courseTitle: String(courseData?.title ?? "").slice(0, 500),
+      status: "PENDING",
+      qpayInvoiceId: String(inv.invoice_id ?? ""),
+      orderId,
+      createdAt: new Date(),
+      paid: false,
+    });
+
     return noStoreJson({
+      ok: true,
       qpayInvoiceId: inv.invoice_id,
       qrText: inv.qr_text ?? null,
-      qrImageBase64: inv.qr_image ?? null,
       qrImageDataUrl: toDataUrlPng(inv.qr_image ?? null),
       urls: Array.isArray(inv.urls) ? inv.urls : [],
       shortUrl: extractShortUrl(inv.urls),
-      amount,
-      description,
-      senderInvoiceNo: sender_invoice_no,
       orderId,
-      callbackUrl: callback_url,
     });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "Server error";
-    return noStoreJson({ error: msg }, 500);
+    return noStoreJson({ ok: false, error: msg }, 500);
   }
 }

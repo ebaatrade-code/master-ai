@@ -19,6 +19,8 @@ type PurchaseEntry = {
   durationLabel?: string;
   purchasedAt?: any; // Firestore Timestamp
   expiresAt?: any; // Firestore Timestamp
+  status?: string;
+  active?: boolean;
 };
 
 type UserDoc = {
@@ -29,8 +31,6 @@ type UserDoc = {
   purchases?: Record<string, PurchaseEntry>;
   role?: UserRole;
   createdAt?: string;
-
-  avatarUrl?: string;
   accountStatus?: AccountStatus;
   authMethod?: "email" | "google" | "unknown";
 };
@@ -71,11 +71,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         phone: "",
         purchasedCourseIds: [],
         purchases: {},
-
         role: "user",
         createdAt: new Date().toISOString(),
-
-        avatarUrl: "",
         accountStatus: "active",
         authMethod: method,
       };
@@ -97,9 +94,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     if (!("createdAt" in data)) {
       await setDoc(ref, { createdAt: new Date().toISOString() }, { merge: true });
     }
-    if (!("avatarUrl" in data)) {
-      await setDoc(ref, { avatarUrl: "" }, { merge: true });
-    }
     if (!("accountStatus" in data)) {
       await setDoc(ref, { accountStatus: "active" }, { merge: true });
     }
@@ -113,10 +107,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
     const init = async () => {
       try {
-        // ✅ MOBILE-д хамгийн чухал: auth хадгалалтыг LOCAL болгоно
         await setPersistence(auth, browserLocalPersistence);
       } catch (e) {
-        // зарим browser дээр persistence fail байж болно → тэгсэн ч үргэлжлүүлнэ
         console.warn("setPersistence failed:", e);
       }
 
@@ -162,8 +154,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
                 purchases: d.purchases ?? {},
                 role: d.role === "admin" ? "admin" : "user",
                 createdAt: d.createdAt,
-
-                avatarUrl: d.avatarUrl ?? "",
                 accountStatus: d.accountStatus === "suspended" ? "suspended" : "active",
                 authMethod:
                   d.authMethod === "google"
@@ -208,7 +198,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     try {
       await signOut(auth);
     } finally {
-      // ✅ UI дээр шууд гараад харагдуулахын тулд state цэвэрлэнэ
       setUser(null);
       setUserDoc(null);
       setLoading(false);

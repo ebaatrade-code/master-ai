@@ -38,38 +38,27 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
   const priceText =
     Number.isFinite(priceNum) && priceNum > 0 ? `${money(priceNum)}₮` : "";
 
+  const oldPriceNum = Number(course.oldPrice ?? 0);
+  const hasOldPrice = Number.isFinite(oldPriceNum) && oldPriceNum > 0 && oldPriceNum > priceNum;
+
+  // Auto-calculate discount %
+  const discountPct =
+    hasOldPrice && priceNum > 0
+      ? Math.round((1 - priceNum / oldPriceNum) * 100)
+      : null;
+
   const CardWrap: any = href ? Link : "div";
   const wrapProps = href ? { href } : {};
 
-  // ✅ MOBILE: white card + black text
-  // ✅ DESKTOP (md+): remove gray/dark background (transparent)
-  const cardBase =
-    "group block relative overflow-hidden rounded-3xl " +
-    "bg-white border-2 border-black/10 " +
-    "transition-all duration-300 ease-out transform-gpu will-change-transform " +
-    "hover:scale-[1.04] hover:-translate-y-2 " +
-    // 🔥 гол засвар: md дээр саарал/хар panel байхгүй болгох
-    "md:bg-transparent md:border-2 md:backdrop-blur-0";
-
-  const cardPurchased =
-    "md:border-orange-400/70 md:shadow-[0_0_18px_rgba(249,115,22,0.18)] " +
-    "md:hover:border-orange-300/90 md:hover:shadow-[0_0_42px_rgba(249,115,22,0.45)]";
-
-  const cardNotPurchased =
-    "md:border-cyan-400/70 md:shadow-[0_0_18px_rgba(56,189,248,0.35)] " +
-    "md:hover:border-cyan-300/90 md:hover:shadow-[0_0_42px_rgba(56,189,248,0.75)]";
-
-  // ✅ payment choice modal (логик өөрчлөхгүй)
+  // ── State (unchanged) ──────────────────────────────
   const [choiceOpen, setChoiceOpen] = useState(false);
-
-  // ✅ deeplink modal (логик өөрчлөхгүй)
   const [bankOpen, setBankOpen] = useState(false);
   const [payStatus, setPayStatus] = useState("");
   const [orderId, setOrderId] = useState("");
   const [urls, setUrls] = useState<Deeplink[]>([]);
-
   const amount = useMemo(() => Number(course.price ?? 0), [course.price]);
 
+  // ── Guards & handlers (unchanged) ─────────────────
   function guardLogin(): boolean {
     if (user) return true;
     const cb = href || "/";
@@ -79,53 +68,31 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
 
   async function createBankDeeplinkInvoice() {
     if (!guardLogin()) return;
-
     if (!course?.id) return;
-
     if (!Number.isFinite(amount) || amount <= 0) {
       setBankOpen(true);
       setPayStatus("Үнэ буруу байна. Admin дээр course price-аа шалгаарай.");
       return;
     }
-
     try {
       setBankOpen(true);
       setPayStatus("Банкны deeplink үүсгэж байна…");
       setOrderId("");
       setUrls([]);
-
       const idToken = await user!.getIdToken();
-
       const res = await fetch("/api/qpay/deeplink/create", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          courseId: course.id,
-          amount,
-          title: course.title,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ courseId: course.id }), // amount client-ээс дамжуулахгүй — server татна
       });
-
       const data: any = await res.json().catch(() => null);
-
       if (!res.ok) {
-        setPayStatus(
-          data?.message || data?.error || "Deeplink invoice үүсгэхэд алдаа гарлаа."
-        );
+        setPayStatus(data?.message || data?.error || "Deeplink invoice үүсгэхэд алдаа гарлаа.");
         return;
       }
-
-      const newOrderId = String(data?.orderId || "");
-      const newUrls = Array.isArray(data?.urls) ? (data.urls as Deeplink[]) : [];
-
-      setOrderId(newOrderId);
-      setUrls(newUrls);
-      setPayStatus(
-        "Банк сонгоод төлбөрөө хийнэ үү. Төлсний дараа “Төлбөр шалгах” дарна уу."
-      );
+      setOrderId(String(data?.orderId || ""));
+      setUrls(Array.isArray(data?.urls) ? (data.urls as Deeplink[]) : []);
+      setPayStatus('Банк сонгоод төлбөрөө хийнэ үү. Төлсний дараа "Төлбөр шалгах" дарна уу.');
     } catch (e: any) {
       setPayStatus(e?.message || "Алдаа гарлаа. Дахин оролдоно уу.");
     }
@@ -136,27 +103,19 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
       setPayStatus("Order олдсонгүй. Дахин АВАХ дарж оролдоно уу.");
       return;
     }
-
     try {
       setPayStatus("Төлбөр шалгаж байна…");
       const idToken = await user.getIdToken();
-
       const res = await fetch("/api/qpay/deeplink/check", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ orderId }),
       });
-
       const data: any = await res.json().catch(() => null);
-
       if (!res.ok) {
         setPayStatus(data?.message || data?.error || "Төлбөр шалгахад алдаа гарлаа.");
         return;
       }
-
       if (data?.status === "PAID") {
         setPayStatus("Төлбөр баталгаажлаа ✅ Курс нээгдлээ!");
         setBankOpen(false);
@@ -169,105 +128,174 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
     }
   }
 
-  // ⚠️ UI дээр button-уудыг бүр мөсөн авч байгаа ч,
-  // логик чинь ирээдүйд хэрэгтэй тул устгахгүй (өөрчлөхгүй) үлдээж байна.
   function onBuyClick(e: any) {
     e.preventDefault();
     e.stopPropagation();
-
     if (!guardLogin()) return;
     setChoiceOpen(true);
   }
 
+  // ── Render ─────────────────────────────────────────
   return (
     <>
       <CardWrap
         {...wrapProps}
-        className={`${cardBase} ${isPurchased ? cardPurchased : cardNotPurchased}`}
+        className="group block relative overflow-hidden rounded-[22px] bg-white border border-black/8 shadow-[0_2px_16px_rgba(0,0,0,0.05)] transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-[0_10px_32px_rgba(0,0,0,0.10)]"
       >
-        {/* THUMBNAIL */}
-        <div className="relative overflow-hidden rounded-t-3xl bg-white md:bg-black/50">
-          <div className="aspect-[16/9]">
-            {course.thumbnailUrl ? (
-              <>
-                {/* background blur */}
-                <img
-                  src={course.thumbnailUrl}
-                  alt=""
-                  aria-hidden="true"
-                  className="absolute inset-0 h-full w-full object-cover blur-2xl scale-110 opacity-25 md:opacity-40"
-                />
-                <div className="absolute inset-0 bg-white/55 md:bg-black/55" />
 
-                <div
-                  className={`pointer-events-none absolute inset-0 z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100 ${
-                    isPurchased
-                      ? "md:bg-[radial-gradient(circle_at_30%_20%,rgba(249,115,22,0.50),transparent_55%),radial-gradient(circle_at_70%_80%,rgba(249,115,22,0.25),transparent_60%)]"
-                      : "md:bg-[radial-gradient(circle_at_30%_20%,rgba(56,189,248,0.55),transparent_55%),radial-gradient(circle_at_70%_80%,rgba(56,189,248,0.25),transparent_60%)]"
-                  }`}
-                />
+        {/* ── THUMBNAIL ── */}
+        <div className="relative overflow-hidden aspect-[16/9] bg-[#EDEDEA]">
+          {course.thumbnailUrl ? (
+            <img
+              src={course.thumbnailUrl}
+              alt={course.title}
+              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <svg className="h-10 w-10 text-black/20" viewBox="0 0 24 24" fill="none">
+                <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.5"/>
+                <circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M3 15l5-5 4 4 3-3 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          )}
 
-                <div
-                  className={`pointer-events-none absolute -inset-8 z-10 opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-100 ${
-                    isPurchased
-                      ? "md:bg-[radial-gradient(circle,rgba(249,115,22,0.30),transparent_60%)]"
-                      : "md:bg-[radial-gradient(circle,rgba(56,189,248,0.30),transparent_60%)]"
-                  }`}
-                />
-
-                <img
-                  src={course.thumbnailUrl}
-                  alt={course.title}
-                  className="relative z-20 h-full w-full object-cover"
-                  loading="lazy"
-                />
-              </>
-            ) : (
-              <div className="grid h-full place-items-center text-black/50 md:text-black/40">
-                <span className="text-sm">Thumbnail байхгүй</span>
+          {/* Discount badge — neon rotating glow */}
+          {discountPct && (
+            <div className="absolute top-3 left-3" style={{position:'absolute',top:'12px',left:'12px'}}>
+              <style>{`
+                @keyframes disc-spin {
+                  to { transform: rotate(360deg); }
+                }
+                @keyframes disc-pulse {
+                  0%,100% { opacity:1; }
+                  50%      { opacity:0.7; }
+                }
+                .disc-wrap::before {
+                  content:'';
+                  position:absolute;
+                  inset:-80%;
+                  background:conic-gradient(from 0deg,#ff0000,#ff3300,#ff6600,#ff0000);
+                  animation:disc-spin 2s linear infinite;
+                  border-radius:999px;
+                }
+              `}</style>
+              <div
+                className="disc-wrap"
+                style={{
+                  position:'relative',
+                  borderRadius:'999px',
+                  padding:'2px',
+                  overflow:'hidden',
+                  display:'inline-block',
+                }}
+              >
+                <div style={{
+                  position:'relative',
+                  zIndex:1,
+                  background:'#111',
+                  borderRadius:'999px',
+                  padding:'4px 10px',
+                  fontSize:'11px',
+                  fontWeight:900,
+                  color:'#fff',
+                  lineHeight:1,
+                  letterSpacing:'0.03em',
+                  whiteSpace:'nowrap',
+                  textShadow:'0 0 8px rgba(255,100,40,0.9)',
+                  boxShadow:'0 0 10px rgba(255,70,30,0.6)',
+                  animation:'disc-pulse 2s ease-in-out infinite',
+                }}>
+                  −{discountPct}%
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Category badge */}
+          {course.category && (
+            <div className="absolute top-3 right-3 rounded-full bg-black/50 backdrop-blur-sm px-2.5 py-[5px] text-[11px] font-semibold text-white leading-none">
+              {course.category}
+            </div>
+          )}
+
+          {/* Purchased: play hint on hover */}
+          {isPurchased && (
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <div className="flex items-center gap-2 rounded-full bg-white/90 backdrop-blur-sm px-4 py-2 text-[13px] font-bold text-black shadow-lg">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                Үзэх
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* BODY — ✅ зөвхөн: year, title, price, oldPrice */}
-        <div className="p-5 bg-transparent">
+        {/* ── BODY ── */}
+        <div className="px-5 pt-4 pb-5">
+
           {/* Year */}
-          <div className="text-sm font-semibold text-black/55 md:text-black/55">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/35">
             {course.year ?? "2025"}
-          </div>
+          </p>
 
-          {/* Гарчиг */}
-          <div className="mt-3 text-xl font-black leading-snug text-black/95 line-clamp-2 md:text-black/95">
+          {/* Title */}
+          <p className="mt-1.5 text-[15px] font-bold leading-snug text-black line-clamp-2 min-h-[42px]">
             {course.title}
-          </div>
+          </p>
 
-          {/* Үнэ + Хямдарсан үнэ */}
-          <div className="mt-10 flex items-end gap-4">
-            {priceText ? (
-              // ✅ Одоогийн үнэ = ТОД УЛААН
-              <div className="text-2xl font-extrabold text-black-600 md:text-black-600">
-                {priceText}
-              </div>
-            ) : null}
+          {/* Duration (optional) */}
+          {course.durationLabel && (
+            <div className="mt-2 flex items-center gap-1.5 text-[12px] text-black/38 font-medium">
+              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3" strokeLinecap="round"/>
+              </svg>
+              {course.durationLabel}
+            </div>
+          )}
 
-            {course.oldPrice ? (
-              <div
-                // ✅ FORCE faint (even if global CSS overrides)
-                className="
-                  pb-[2px]
-                  text-base font-medium line-through
-                  !text-black/40 !drop-shadow-none
-                  md:!text-black/40
-                "
-                style={{ color: "rgba(0,0,0,0.40)" }}
+          {/* Divider */}
+          <div className="mt-4 mb-4 h-px bg-black/6" />
+
+          {/* Price + CTA */}
+          <div className="flex items-center justify-between gap-2">
+
+            {/* Prices */}
+            <div className="flex items-baseline gap-2 min-w-0">
+              {priceText && (
+                <span className="text-[22px] font-extrabold tracking-tight text-black leading-none">
+                  {priceText}
+                </span>
+              )}
+              {hasOldPrice && (
+                <span className="text-[13px] font-medium text-black/30 line-through">
+                  {money(oldPriceNum)}₮
+                </span>
+              )}
+            </div>
+
+            {/* CTA */}
+            {isPurchased ? (
+              <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-black/8 bg-black/[0.03] px-3.5 py-2 text-[12px] font-semibold text-black/50">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                Нээлттэй
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onBuyClick}
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-black/10 px-4 py-2 text-[13px] font-bold text-black shadow-[0_4px_14px_rgba(241,196,91,0.35)] transition-all hover:brightness-105 hover:-translate-y-px active:translate-y-0 active:shadow-none"
+                style={{ background: "linear-gradient(135deg,#F4D27A,#F1C45B)" }}
               >
-                {money(Number(course.oldPrice))}₮
-              </div>
-            ) : null}
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                </svg>
+                Худалдаж авах
+              </button>
+            )}
           </div>
-
-          {/* ✅ “ХУДАЛДАЖ АВАХ / ХИЧЭЭЛ ҮЗЭХ” хэсгийг бүр мөсөн арилгасан */}
         </div>
       </CardWrap>
 

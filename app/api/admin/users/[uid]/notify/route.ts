@@ -32,10 +32,10 @@ export async function POST(
   const raw = await req.json().catch(() => ({}));
   const body = raw as Partial<Body>;
 
-  const title = String(body?.title || "").trim();
-  const msg = String(body?.body || "").trim();
-  const link = String(body?.link || "").trim() || "/my-content";
-  const type = String(body?.type || "").trim() || "info";
+  const title = String(body?.title || "").trim().slice(0, 200);
+  const msg = String(body?.body || "").trim().slice(0, 1000);
+  const link = String(body?.link || "").trim().slice(0, 500) || "/my-content";
+  const type = String(body?.type || "").trim().slice(0, 50) || "info";
 
   if (!title || !msg) {
     return NextResponse.json(
@@ -46,9 +46,9 @@ export async function POST(
 
   const db = adminDb();
   const notifRef = db
-    .collection("notifications")
+    .collection("users")
     .doc(targetUid)
-    .collection("items")
+    .collection("notifications")
     .doc();
 
   await notifRef.set({

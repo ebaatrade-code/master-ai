@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"byLessonSec\\\\|coursePercent\\\\|lastSaveRef\\\\|progressDocRef\\\\|saveProgress\\\\|isLessonCompleted\" e:/master-ai/app/course/[id]/page.tsx)"
+    ]
+  }
+}

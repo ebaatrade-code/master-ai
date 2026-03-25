@@ -337,3 +337,21 @@ select:-webkit-autofill:focus {
 
   transition: background-color 9999s ease-out 0s !important;
 }
+
+.logo-fire {
+  position: relative;
+  animation: fireGlow 2s infinite alternate;
+}
+
+.logo-fire::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 12px;
+  background: radial-gradient(circle, rgba(255,120,0,0.8), transparent 70%);
+  filter: blur(10px);
+  opacity: 0.6;
+  animation: firePulse 1.5s infinite alternate;
+  z-index: -1;
+}
+

@@ -11,25 +11,16 @@ import {
   query,
   where,
   documentId,
-  orderBy,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
-import {
-  calcCoursePercentFromProgress,
-  getCourseProgressFS,
-} from "@/lib/progress";
 
 type Course = {
   id: string;
   title?: string;
   thumbnailUrl?: string;
   authorName?: string;
-};
-
-type LessonMini = {
-  id: string;
-  durationSec?: number;
+  lessonCount?: number;
 };
 
 function chunk<T>(arr: T[], size: number) {
@@ -38,125 +29,97 @@ function chunk<T>(arr: T[], size: number) {
   return out;
 }
 
-function clamp(n: number, min = 0, max = 100) {
-  return Math.max(min, Math.min(max, n));
-}
-
-// ✅ Timestamp/string/date -> ms helper
 function tsToMs(x: any): number | null {
   try {
     if (!x) return null;
     if (typeof x === "number" && Number.isFinite(x)) return x;
-    if (typeof x === "string") {
-      const d = new Date(x);
-      const ms = d.getTime();
-      return Number.isFinite(ms) ? ms : null;
-    }
-    if (typeof x?.toMillis === "function") {
-      const ms = x.toMillis();
-      return Number.isFinite(ms) ? ms : null;
-    }
-    if (typeof x?.toDate === "function") {
-      const d = x.toDate();
-      const ms = d?.getTime?.();
-      return Number.isFinite(ms) ? ms : null;
-    }
+    if (typeof x === "string") { const d = new Date(x); const ms = d.getTime(); return Number.isFinite(ms) ? ms : null; }
+    if (typeof x?.toMillis === "function") { const ms = x.toMillis(); return Number.isFinite(ms) ? ms : null; }
+    if (typeof x?.toDate === "function") { const d = x.toDate(); const ms = d?.getTime?.(); return Number.isFinite(ms) ? ms : null; }
     return null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-/** ✅ Wide premium card */
-function PurchasedWideCard({
+function CourseCard({
   course,
-  pct,
+  isNew,
   onContinue,
 }: {
   course: Course;
-  pct: number;
+  isNew: boolean;
   onContinue: () => void;
 }) {
   return (
-    <div className="premium-card p-5 rounded-[26px] md:rounded-[22px]">
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
-        {/* Left thumbnail */}
-        <div className="relative w-full lg:w-[420px]">
-          <div className="relative overflow-hidden rounded-[22px] border border-orange-300/25 bg-black/30 shadow-[0_0_0_1px_rgba(255,138,0,0.10),0_18px_60px_rgba(0,0,0,0.55)]">
-            <div className="pointer-events-none absolute inset-0 ring-1 ring-[rgba(255,138,0,0.22)]" />
-            <div className="pointer-events-none absolute -inset-6 bg-[rgba(255,138,0,0.10)] blur-[40px]" />
-            <div className="relative aspect-[16/9] w-full">
-              <Image
-                src={
-                  course.thumbnailUrl ||
-                  "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=1600&auto=format&fit=crop"
-                }
-                alt={course.title || "Course"}
-                fill
-                className="object-cover"
-                sizes="(max-width: 1024px) 100vw, 420px"
-              />
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,0.60),transparent_65%)]" />
-            </div>
-          </div>
+    <div className="group flex flex-col overflow-hidden rounded-2xl border border-black/8 bg-white shadow-sm transition-shadow hover:shadow-md">
+      {/* Thumbnail */}
+      <div className="relative aspect-[16/9] w-full overflow-hidden bg-neutral-900">
+        {course.thumbnailUrl ? (
+          <Image
+            src={course.thumbnailUrl}
+            alt={course.title || "Course"}
+            fill
+            className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            sizes="(max-width: 768px) 100vw, 50vw"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-neutral-800 to-neutral-900" />
+        )}
+
+        {/* dark overlay gradient */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+
+        {/* КУРС badge */}
+        <div className="absolute left-3 top-3 flex items-center gap-1.5">
+          <span className="rounded-md bg-orange-500 px-2 py-0.5 text-[10px] font-black tracking-widest text-white">
+            КУРС
+          </span>
         </div>
 
-        {/* Right info */}
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <div className="text-sm font-extrabold tracking-wide text-black md:text-black">
-              КУРС
-            </div>
-
-            <div className="rounded-full border border-black/10 bg-black/[0.03] px-3 py-1 text-xs text-black md:border-black/10 md:bg-black/[0.03] md:text-black">
-              • •
-            </div>
-          </div>
-
-          <div className="mt-3 text-2xl font-extrabold leading-tight text-black md:text-black">
+        {/* Title overlay on thumbnail */}
+        <div className="absolute bottom-0 left-0 right-0 px-4 pb-4">
+          <div className="text-base font-extrabold leading-snug text-white drop-shadow-sm line-clamp-2">
             {course.title || "Таны курс"}
           </div>
+        </div>
+      </div>
 
-          <div className="mt-4">
-            <div className="text-sm text-black md:text-black">
-              Прогресс:{" "}
-              <span className="font-extrabold text-black md:text-black">
-                {pct}%
-              </span>
-            </div>
+      {/* Card body */}
+      <div className="flex flex-1 flex-col px-4 pt-3 pb-4">
+        {/* Author + lesson count */}
+        <div className="flex items-center gap-2 text-[12px] text-black/45">
+          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+          <span>{course.authorName || "ebacreator"}</span>
 
-            {/* ✅ FIX: Desktop дээр ч саарал track + улбар шар fill (цагаан болохгүй) */}
-            <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-300 ring-1 ring-black/10 shadow-inner">
-              <div
-                className="h-full rounded-full transition-all bg-orange-500"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          </div>
+          {course.lessonCount != null && course.lessonCount > 0 && (
+            <>
+              <span className="text-black/20">·</span>
+              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              <span>{course.lessonCount} хичээл</span>
+            </>
+          )}
+        </div>
 
-          <div className="mt-4 text-sm text-black md:text-black">
-            Хичээл заасан:{" "}
-            <span className="font-semibold text-black md:text-black">
-              {course.authorName || "ebacreator"}
-            </span>
-          </div>
+        {/* Thin divider */}
+        <div className="my-3 h-px w-full bg-black/6" />
 
-          <div className="mt-6 flex md:justify-end">
-            {/* ✅ NEW: Gradient stroke wrapper (blue → purple) */}
-            <div className="rounded-full bg-gradient-to-r from-orange-400/40 via-orange-300/30 to-orange-400/40 p-[1.5px] md:rounded-xl">
-              <button
-                onClick={onContinue}
-                className="
-                  premium-btn
-                  px-10 py-3 text-sm
-                  rounded-full
-                  md:rounded-xl
-                "
-              >
-                ҮРГЭЛЖЛҮҮЛЭХ
-              </button>
-            </div>
-          </div>
+        {/* Bottom row */}
+        <div className="flex items-center justify-between">
+          <span className="text-[12px] font-medium text-black/35">
+            {isNew ? "Шинэ" : ""}
+          </span>
+          <button
+            onClick={onContinue}
+            className="inline-flex items-center gap-1.5 rounded-full bg-orange-500 px-4 py-2 text-[12px] font-bold text-white shadow-sm transition-all hover:bg-orange-600 active:scale-95"
+          >
+            {isNew ? "Эхлэх" : "Үргэлжлүүлэх"}
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -167,68 +130,46 @@ export default function MyContentPage() {
   const router = useRouter();
   const { user, loading, purchasedCourseIds } = useAuth();
 
-  // ✅ AuthProvider-аас ирсэн raw ids
   const rawIds = useMemo(
     () => (purchasedCourseIds ?? []).filter(Boolean),
     [purchasedCourseIds]
   );
 
-  // ✅ Expired-үүдийг хассан ACTIVE ids
   const [ids, setIds] = useState<string[]>([]);
   const [expiryChecked, setExpiryChecked] = useState(false);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [fetching, setFetching] = useState(false);
-
-  const [progressMap, setProgressMap] = useState<Record<string, number>>({});
-  const [overallPct, setOverallPct] = useState(0);
-
-  const [progressLoading, setProgressLoading] = useState(false);
-  const [missingIds, setMissingIds] = useState<string[]>([]);
+  const [lessonCounts, setLessonCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (loading) return;
-    if (!user)
-      router.replace(
-        `/login?callbackUrl=${encodeURIComponent("/my-content")}`
-      );
+    if (!user) router.replace(`/login?callbackUrl=${encodeURIComponent("/my-content")}`);
   }, [loading, user, router]);
 
-  // ✅ “Миний сургалтууд”-аас хугацаа дууссан курсийг автоматаар хасна
+  // Filter out expired courses
   useEffect(() => {
     if (loading || !user) return;
 
     const run = async () => {
       setExpiryChecked(false);
-
-      // rawIds хоосон бол шууд reset
-      if (rawIds.length === 0) {
-        setIds([]);
-        setExpiryChecked(true);
-        return;
-      }
+      if (rawIds.length === 0) { setIds([]); setExpiryChecked(true); return; }
 
       try {
         const snap = await getDoc(doc(db, "users", user.uid));
         const data = snap.exists() ? (snap.data() as any) : null;
         const purchases = data?.purchases ?? {};
-
         const now = Date.now();
         const active: string[] = [];
 
         for (const courseId of rawIds) {
           const p = purchases?.[courseId] ?? null;
           const expMs = tsToMs(p?.expiresAt);
-
-          // ✅ expMs байгаа бөгөөд хугацаа нь өнгөрсөн бол ACTIVE-д оруулахгүй
           if (expMs && now > expMs) continue;
-
           active.push(courseId);
         }
-
         setIds(active);
       } catch {
-        // ⚠️ Алдаа гарвал “хасах” биш “үзүүлэх” нь илүү safe
         setIds(rawIds);
       } finally {
         setExpiryChecked(true);
@@ -238,45 +179,41 @@ export default function MyContentPage() {
     run();
   }, [loading, user, rawIds]);
 
+  // Fetch course docs
   useEffect(() => {
-    if (loading || !user) return;
-    if (!expiryChecked) return;
+    if (loading || !user || !expiryChecked) return;
 
     const run = async () => {
       setFetching(true);
       try {
-        if (ids.length === 0) {
-          setCourses([]);
-          setProgressMap({});
-          setOverallPct(0);
-          setMissingIds([]);
-          return;
-        }
+        if (ids.length === 0) { setCourses([]); return; }
 
         const groups = chunk(ids, 10);
         const results: Course[] = [];
 
         for (const g of groups) {
-          const qy = query(
-            collection(db, "courses"),
-            where(documentId(), "in", g)
-          );
+          const qy = query(collection(db, "courses"), where(documentId(), "in", g));
           const snap = await getDocs(qy);
           snap.forEach((d) => results.push({ id: d.id, ...(d.data() as any) }));
         }
 
-        const got = new Set(results.map((r) => r.id));
-        const miss = ids.filter((id) => !got.has(id));
-        setMissingIds(miss);
-
         const orderMap = new Map(ids.map((id, idx) => [id, idx]));
-        results.sort(
-          (a, b) =>
-            (orderMap.get(a.id) ?? 999999) -
-            (orderMap.get(b.id) ?? 999999)
-        );
+        results.sort((a, b) => (orderMap.get(a.id) ?? 999999) - (orderMap.get(b.id) ?? 999999));
 
         setCourses(results);
+
+        // Fetch lesson counts in parallel
+        const counts = await Promise.all(
+          results.map((c) =>
+            fetch(`/api/course/lessons?courseId=${encodeURIComponent(c.id)}`)
+              .then((r) => r.ok ? r.json() : null)
+              .then((d) => ({ id: c.id, count: Array.isArray(d?.lessons) ? d.lessons.length : 0 }))
+              .catch(() => ({ id: c.id, count: 0 }))
+          )
+        );
+        const countMap: Record<string, number> = {};
+        for (const { id, count } of counts) countMap[id] = count;
+        setLessonCounts(countMap);
       } finally {
         setFetching(false);
       }
@@ -285,147 +222,93 @@ export default function MyContentPage() {
     run();
   }, [loading, user, ids, expiryChecked]);
 
-  useEffect(() => {
-    if (!user) return;
-    if (!courses.length) {
-      setProgressMap({});
-      setOverallPct(0);
-      return;
-    }
-
-    const run = async () => {
-      setProgressLoading(true);
-      try {
-        const map: Record<string, number> = {};
-        let sumPct = 0;
-        let counted = 0;
-
-        for (const c of courses) {
-          const lessonsQ = query(
-            collection(db, "courses", c.id, "lessons"),
-            orderBy("order", "asc")
-          );
-          const snap = await getDocs(lessonsQ);
-
-          const lessonList: LessonMini[] = snap.docs.map((d) => {
-            const data = d.data() as any;
-            return { id: d.id, durationSec: data?.durationSec };
-          });
-
-          const progress = await getCourseProgressFS(user.uid, c.id);
-
-          const pct = clamp(
-            calcCoursePercentFromProgress({
-              lessons: lessonList,
-              progress,
-              fallbackDurationSec: 300,
-            })
-          );
-
-          map[c.id] = pct;
-          sumPct += pct;
-          counted += 1;
-        }
-
-        setProgressMap(map);
-
-        const ov = counted > 0 ? Math.round(sumPct / counted) : 0;
-        setOverallPct(clamp(ov));
-      } finally {
-        setProgressLoading(false);
-      }
-    };
-
-    run();
-  }, [user, courses]);
-
   if (loading || !user) return null;
 
+  const allAuthors = [...new Set(courses.map((c) => c.authorName).filter(Boolean))];
+  const authorLabel = allAuthors.length === 1 ? allAuthors[0] : "ebacreator";
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10 min-h-[90vh] text-black md:text-black">
-      <div className="flex items-center justify-between gap-6">
-        <div className="text-3xl font-extrabold tracking-tight text-black md:text-black">
-          Миний сургалтууд
+    <div className="min-h-[calc(100vh-80px)] bg-white">
+      <div className="mx-auto max-w-6xl px-6 py-10">
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-black">
+              Миний <span className="text-orange-500">сургалтууд</span>
+            </h1>
+            <p className="mt-1 text-sm text-black/45">Таны бүртгэлтэй сургалтууд</p>
+          </div>
+
+          <button
+            onClick={() => router.push("/contents")}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-black shadow-sm transition-all hover:bg-black/[0.03] hover:shadow-md"
+          >
+            Бүх багц үзэх
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
         </div>
 
-        <button
-          onClick={() => router.push("/contents")}
-          className="
-            premium-btn
-            px-6 py-3 text-sm
-            rounded-[20px]
-            md:rounded-xl
-          "
-        >
-          Бүх багц үзэх →
-        </button>
-      </div>
-
-      {ids.length > 0 ? (
-        <div className="mt-5 p-5 rounded-[22px] bg-[#F3F4F6] border border-black/10 shadow-[0_18px_55px_rgba(0,0,0,0.10)] md:bg-white/5 md:border-white/10 md:shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-extrabold text-black md:text-black">
-              Нийт прогресс
+        {/* Stats pills */}
+        {ids.length > 0 && (
+          <div className="mt-5 flex flex-wrap gap-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-1.5 text-sm font-semibold text-black shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+              <svg className="h-4 w-4 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              {ids.length} курс
             </div>
-            <div className="text-sm font-extrabold text-black md:text-black">
-              {progressLoading ? "..." : `${overallPct}%`}
+
+            <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-1.5 text-sm font-semibold text-black shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+              <svg className="h-4 w-4 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+              Хичээл заасан: <span className="font-extrabold">{authorLabel}</span>
             </div>
           </div>
+        )}
 
-          {/* ✅ FIX: Desktop дээр ч саарал track + улбар шар fill (цагаан болохгүй) */}
-          <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-300 ring-1 ring-black/10 shadow-inner">
-            <div
-              className="h-full rounded-full transition-all bg-orange-500"
-              style={{ width: `${progressLoading ? 0 : overallPct}%` }}
-            />
-          </div>
-
-          <div className="mt-2 text-xs text-black md:text-black">
-            {progressLoading
-              ? "Тооцоолж байна..."
-              : overallPct < 20
-              ? "Эхлэл — өдөр бүр 10–15 минут үзээд хурдасгаарай."
-              : overallPct < 70
-              ? "Сайн явж байна — ХИЧЭЭГЭЭРЭЙ."
-              : overallPct < 100
-              ? "Бараг дууслаа — сүүлийн хэсгээ үз!"
-              : "Бүгдийг 100% үзсэн ✅"}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mt-7">
-        {fetching ? (
-          <div className="premium-card p-6 text-black md:text-black">
-            Уншиж байна...
-          </div>
-        ) : ids.length === 0 ? (
-          <div className="premium-card p-6 text-black md:text-black">
-            Та одоогоор худалдаж авсан сургалтгүй байна.
-          </div>
-        ) : (
-          <>
-            {missingIds.length > 0 ? (
-              <div className="mb-5 rounded-2xl border border-amber-300/20 bg-amber-500/5 p-4 text-sm text-black md:text-black">
-                ⚠️ {missingIds.length} курс Firestore дээр олдсонгүй.
-                <div className="mt-2 text-xs break-all text-black md:text-black">
-                  {missingIds.join(", ")}
-                </div>
+        {/* Content */}
+        <div className="mt-8">
+          {fetching ? (
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-[320px] animate-pulse rounded-2xl bg-black/5" />
+              ))}
+            </div>
+          ) : ids.length === 0 ? (
+            <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-10 text-center">
+              <div className="mb-3 rounded-full bg-black/5 p-4">
+                <svg className="h-8 w-8 text-black/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                </svg>
               </div>
-            ) : null}
-
-            <div className="flex flex-col gap-5">
+              <p className="text-sm font-semibold text-black/60">Та одоогоор худалдаж авсан сургалтгүй байна</p>
+              <button
+                onClick={() => router.push("/contents")}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-orange-500 px-5 py-2 text-sm font-bold text-white hover:bg-orange-600 transition-colors"
+              >
+                Сургалт үзэх
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               {courses.map((course) => (
-                <PurchasedWideCard
+                <CourseCard
                   key={course.id}
-                  course={course}
-                  pct={Number(progressMap[course.id] ?? 0)}
+                  course={{ ...course, lessonCount: lessonCounts[course.id] }}
+                  isNew={!lessonCounts[course.id]}
                   onContinue={() => router.push(`/course/${course.id}`)}
                 />
               ))}
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

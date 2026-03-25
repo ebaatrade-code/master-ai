@@ -7,385 +7,578 @@ import { useAuth } from "@/components/AuthProvider";
 import { db } from "@/lib/firebase";
 import {
   collection,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  Timestamp,
   doc,
+  documentId,
   getDoc,
+  getDocs,
+  query,
+  Timestamp,
+  where,
 } from "firebase/firestore";
 
-type InvoiceRow = {
-  id: string;
-  uid: string;
-
-  courseId?: string;
-  courseTitle?: string;
-  courseThumbUrl?: string | null;
-
+type PurchaseMapItem = {
+  ref?: string;
+  status?: string;
   amount?: number;
-  status?: "PENDING" | "PAID" | "CANCELLED" | "EXPIRED" | string;
-
-  durationLabel?: string | null;
   durationDays?: number | null;
-
-  createdAt?: any;
-  paidAt?: any;
-  qpay?: any;
+  durationLabel?: string | null;
+  paidAt?: unknown;
+  purchasedAt?: unknown;
+  activatedAt?: unknown;
+  expiresAt?: unknown;
+  courseTitle?: string;
+  courseThumbUrl?: string;
 };
 
-function money(n?: number) {
-  const v = Number(n ?? 0);
-  return Number.isFinite(v) ? v.toLocaleString("mn-MN") + "₮" : "0₮";
+type CourseLite = {
+  id: string;
+  title?: string;
+  thumbnailUrl?: string;
+  authorName?: string;
+};
+
+type HistoryRow = {
+  courseId: string;
+  title: string;
+  thumbnailUrl: string;
+  authorName?: string;
+  amount: number;
+  paidAt?: unknown;
+  expiresAt?: unknown;
+  durationDays?: number | null;
+  durationLabel?: string | null;
+  active: boolean;
+};
+
+type UserDocShape = {
+  purchasedCourseIds?: unknown[];
+  purchases?: Record<string, PurchaseMapItem>;
+};
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
 }
 
-function toDateSafe(ts: any): Date | null {
+
+function toDateSafe(value: unknown): Date | null {
   try {
-    if (!ts) return null;
-    if (ts instanceof Timestamp) return ts.toDate();
-    if (typeof ts?.toDate === "function") return ts.toDate();
-    if (typeof ts === "number") {
-      const d = new Date(ts);
+    if (!value) return null;
+
+    if (value instanceof Timestamp) {
+      return value.toDate();
+    }
+
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "toDate" in value &&
+      typeof (value as { toDate?: unknown }).toDate === "function"
+    ) {
+      const d = (value as { toDate: () => Date }).toDate();
       return Number.isNaN(d.getTime()) ? null : d;
     }
-    if (typeof ts === "string") {
-      const d = new Date(ts);
+
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "seconds" in value &&
+      "nanoseconds" in value
+    ) {
+      const ts = value as { seconds?: unknown; nanoseconds?: unknown };
+      const seconds =
+        typeof ts.seconds === "number" ? ts.seconds : Number(ts.seconds);
+      const nanoseconds =
+        typeof ts.nanoseconds === "number"
+          ? ts.nanoseconds
+          : Number(ts.nanoseconds);
+
+      if (Number.isFinite(seconds) && Number.isFinite(nanoseconds)) {
+        const ms = seconds * 1000 + Math.floor(nanoseconds / 1e6);
+        const d = new Date(ms);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+    }
+
+    if (typeof value === "number") {
+      const d = new Date(value);
       return Number.isNaN(d.getTime()) ? null : d;
     }
-    if (ts?.seconds != null && ts?.nanoseconds != null) {
-      const ms = ts.seconds * 1000 + Math.floor(ts.nanoseconds / 1e6);
-      const d = new Date(ms);
+
+    if (typeof value === "string") {
+      const d = new Date(value);
       return Number.isNaN(d.getTime()) ? null : d;
     }
+
     return null;
   } catch {
     return null;
   }
 }
 
-function fmt(ts: any) {
-  const d = toDateSafe(ts);
+function fmtDate(value: unknown) {
+  const d = toDateSafe(value);
   if (!d) return "—";
-  return d.toLocaleString("mn-MN", {
+
+  return d.toLocaleDateString("mn-MN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
-function badge(status?: string) {
-  const s = (status ?? "").toUpperCase();
-
-  // ✅ PENDING -> mobile black text, desktop remains readable
-  if (s === "PENDING")
-    return "bg-amber-500/15 text-black border-amber-500/35 sm:text-amber-800";
-
-  if (s === "PAID") return "bg-emerald-500/15 text-emerald-700 border-emerald-500/35";
-  if (s === "CANCELLED") return "bg-black/5 text-black/60 border-black/20";
-  if (s === "EXPIRED") return "bg-black/5 text-black/60 border-black/20";
-  return "bg-black/5 text-black/70 border-black/20";
-}
-
-function label(status?: string) {
-  const s = (status ?? "").toUpperCase();
-  if (s === "PAID") return "Төлөгдсөн";
-  if (s === "PENDING") return "Төлбөр хүлээгдэж байна";
-  if (s === "CANCELLED") return "Цуцлагдсан";
-  if (s === "EXPIRED") return "Хугацаа дууссан";
-  return status ?? "Тодорхойгүй";
+function toMs(value: unknown): number | null {
+  const d = toDateSafe(value);
+  if (!d) return null;
+  const ms = d.getTime();
+  return Number.isFinite(ms) ? ms : null;
 }
 
 function durationText(durationLabel?: string | null, durationDays?: number | null) {
   const lbl = String(durationLabel ?? "").trim();
   if (lbl) return lbl;
+
   const dd = Number(durationDays ?? 0);
   if (Number.isFinite(dd) && dd > 0) return `${dd} хоног`;
+
   return "—";
 }
 
-export default function PurchasesPage() {
-  const { user, loading } = useAuth();
+function isExpired(expiresAt: unknown) {
+  const ms = toMs(expiresAt);
+  if (!ms) return false;
+  return Date.now() > ms;
+}
 
-  const [rows, setRows] = useState<InvoiceRow[]>([]);
+function getRemainingDays(expiresAt: unknown): number | null {
+  const ms = toMs(expiresAt);
+  if (!ms) return null;
+  const remaining = ms - Date.now();
+  if (remaining <= 0) return 0;
+  return Math.ceil(remaining / (1000 * 60 * 60 * 24));
+}
+
+function getProgressPercent(paidAt: unknown, expiresAt: unknown): number {
+  const startMs = toMs(paidAt);
+  const endMs = toMs(expiresAt);
+  if (!startMs || !endMs || endMs <= startMs) return 0;
+  const elapsed = Date.now() - startMs;
+  return Math.min(100, Math.max(0, (elapsed / (endMs - startMs)) * 100));
+}
+
+function sortRows(rows: HistoryRow[]) {
+  const activeRows = rows
+    .filter((r) => r.active)
+    .sort((a, b) => {
+      const aPaid = toMs(a.paidAt) ?? 0;
+      const bPaid = toMs(b.paidAt) ?? 0;
+      return bPaid - aPaid;
+    });
+
+  const expiredRows = rows
+    .filter((r) => !r.active)
+    .sort((a, b) => {
+      const aExp = toMs(a.expiresAt) ?? 0;
+      const bExp = toMs(b.expiresAt) ?? 0;
+      return bExp - aExp;
+    });
+
+  return [...activeRows, ...expiredRows];
+}
+
+function getPurchaseDate(purchase?: PurchaseMapItem): unknown {
+  return (
+    purchase?.paidAt ??
+    purchase?.purchasedAt ??
+    purchase?.activatedAt ??
+    null
+  );
+}
+
+export default function PurchasesPage() {
+  const { user, loading, purchasedCourseIds } = useAuth();
+
+  const [rows, setRows] = useState<HistoryRow[]>([]);
+  const [fetching, setFetching] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // ✅ Course existence cache (to hide deleted courses in history)
-  const [courseExists, setCourseExists] = useState<Record<string, boolean>>({});
+  const rawIds = useMemo(
+    () =>
+      Array.isArray(purchasedCourseIds)
+        ? purchasedCourseIds
+            .map((v) => String(v ?? "").trim())
+            .filter((v) => v.length > 0)
+        : [],
+    [purchasedCourseIds]
+  );
 
   useEffect(() => {
     if (loading) return;
-    if (!user?.uid) return;
 
-    setErr(null);
-
-    const q = query(
-      collection(db, "invoices"),
-      where("uid", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const items: InvoiceRow[] = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as any),
-        }));
-        setRows(items);
-      },
-      (e) => setErr(e.message || "Алдаа гарлаа")
-    );
-
-    return () => unsub();
-  }, [user?.uid, loading]);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!user?.uid) return;
-    if (!rows.length) return;
+    if (!user?.uid) {
+      setRows([]);
+      setErr(null);
+      return;
+    }
 
     let alive = true;
 
-    (async () => {
+    const run = async () => {
+      setFetching(true);
+      setErr(null);
+
       try {
-        const ids = Array.from(
-          new Set(
-            rows
-              .map((r) => String(r.courseId || "").trim())
-              .filter(Boolean)
-          )
-        );
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
 
-        if (!ids.length) return;
+        if (!userSnap.exists()) {
+          if (!alive) return;
+          setRows([]);
+          return;
+        }
 
-        const missing = ids.filter((cid) => courseExists[cid] === undefined);
-        if (!missing.length) return;
+        const userData = (userSnap.data() as UserDocShape) || {};
 
-        const checks = await Promise.all(
-          missing.map(async (cid) => {
-            try {
-              const csnap = await getDoc(doc(db, "courses", cid));
-              return { cid, exists: csnap.exists() };
-            } catch {
-              return { cid, exists: true };
-            }
-          })
-        );
+        const docPurchasedIds = Array.isArray(userData.purchasedCourseIds)
+          ? userData.purchasedCourseIds
+              .map((v) => String(v ?? "").trim())
+              .filter((v) => v.length > 0)
+          : [];
+
+        const purchasesMap: Record<string, PurchaseMapItem> =
+          userData.purchases && typeof userData.purchases === "object"
+            ? userData.purchases
+            : {};
+
+        const mergedIds = Array.from(
+          new Set([
+            ...rawIds,
+            ...docPurchasedIds,
+            ...Object.keys(purchasesMap).map((v) => String(v ?? "").trim()),
+          ])
+        ).filter(Boolean);
+
+        if (mergedIds.length === 0) {
+          if (!alive) return;
+          setRows([]);
+          return;
+        }
+
+        const courseDocs: CourseLite[] = [];
+        const groups = chunk<string>(mergedIds, 10);
+
+        for (const group of groups) {
+          const qy = query(
+            collection(db, "courses"),
+            where(documentId(), "in", group)
+          );
+          const snap = await getDocs(qy);
+
+          snap.forEach((d) => {
+            const data = d.data() as Omit<CourseLite, "id">;
+            courseDocs.push({
+              id: d.id,
+              title: data.title,
+              thumbnailUrl: data.thumbnailUrl,
+              authorName: data.authorName,
+            });
+          });
+        }
+
+        const courseMap = new Map<string, CourseLite>();
+        for (const course of courseDocs) {
+          courseMap.set(course.id, course);
+        }
+
+        const nextRows: HistoryRow[] = mergedIds.map((courseId) => {
+          const purchase = purchasesMap[courseId] ?? {};
+          const course = courseMap.get(courseId);
+
+          const amount = Number(purchase.amount ?? 0);
+          const safeAmount = Number.isFinite(amount) ? amount : 0;
+
+          const paidAt = getPurchaseDate(purchase);
+
+          return {
+            courseId,
+            title: String(
+              course?.title ??
+                purchase.courseTitle ??
+                "Сургалтын нэр олдсонгүй"
+            ),
+            thumbnailUrl: String(
+              course?.thumbnailUrl ??
+                purchase.courseThumbUrl ??
+                ""
+            ).trim(),
+            authorName: course?.authorName
+              ? String(course.authorName).trim()
+              : undefined,
+            amount: safeAmount,
+            paidAt,
+            expiresAt: purchase.expiresAt ?? null,
+            durationDays:
+              typeof purchase.durationDays === "number"
+                ? purchase.durationDays
+                : purchase.durationDays != null
+                ? Number(purchase.durationDays)
+                : null,
+            durationLabel:
+              purchase.durationLabel != null
+                ? String(purchase.durationLabel)
+                : null,
+            active: !isExpired(purchase.expiresAt),
+          };
+        });
 
         if (!alive) return;
+        setRows(sortRows(nextRows));
+      } catch (e: unknown) {
+        if (!alive) return;
 
-        setCourseExists((prev) => {
-          const next = { ...prev };
-          for (const c of checks) next[c.cid] = c.exists;
-          return next;
-        });
-      } catch {
-        // ignore
+        const message =
+          e instanceof Error
+            ? e.message
+            : "Худалдан авалтын түүх унших үед алдаа гарлаа.";
+
+        setErr(message);
+        setRows([]);
+      } finally {
+        if (alive) {
+          setFetching(false);
+        }
       }
-    })();
+    };
+
+    run();
 
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, user?.uid, loading]);
+  }, [user?.uid, loading, rawIds]);
 
-  const historyRows = useMemo(() => {
-    return rows
-      .filter((r) => String(r.status ?? "").toUpperCase() !== "PAID")
-      .filter((r) => String(r.status ?? "").toUpperCase() !== "ARCHIVED")
-      .filter((r) => {
-        const cid = String(r.courseId || "").trim();
-        if (!cid) return true;
-        const ex = courseExists[cid];
-        if (ex === false) return false;
-        return true;
-      });
-  }, [rows, courseExists]);
+  const activeCount = useMemo(
+    () => rows.filter((r) => r.active).length,
+    [rows]
+  );
 
-  const pendingCount = useMemo(() => {
-    return historyRows.filter((r) => String(r.status).toUpperCase() === "PENDING").length;
-  }, [historyRows]);
+  const expiredCount = useMemo(
+    () => rows.filter((r) => !r.active).length,
+    [rows]
+  );
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-80px)] p-6 text-black/70">
-        Уншиж байна...
+      <div className="flex min-h-[calc(100vh-80px)] items-center justify-center bg-gray-50/50 p-6">
+        <div className="flex flex-col items-center gap-3 text-gray-400">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+          <span className="text-sm font-medium">Уншиж байна...</span>
+        </div>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="min-h-[calc(100vh-80px)] p-6 text-black/70">
-        Нэвтэрсний дараа худалдан авалтын түүх харагдана.
+      <div className="flex min-h-[calc(100vh-80px)] items-center justify-center bg-gray-50/50 p-6">
+        <div className="text-center text-gray-500">
+          <p className="text-lg font-medium text-gray-900">Нэвтрэх шаардлагатай</p>
+          <p className="mt-1 text-sm">Нэвтэрсний дараа худалдан авалтын түүх харагдана.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="purchase-history-page min-h-[calc(100vh-80px)] text-black">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 pt-8 pb-14">
-        <div className="flex items-end justify-between gap-3">
+    <div className="min-h-[calc(100vh-80px)] bg-gray-50/30 text-gray-900">
+      <div className="mx-auto max-w-4xl px-4 pt-10 pb-16 sm:px-6 sm:pt-12">
+        {/* Header Section */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-[28px] leading-[1.05] font-black tracking-tight sm:text-2xl sm:font-extrabold sm:tracking-tight">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl text-gray-900">
               Худалдан авалтын түүх
             </h1>
+            <p className="mt-2 text-sm text-gray-500">
+              Таны худалдан авсан бүх сургалтуудын жагсаалт.
+            </p>
           </div>
 
-          {pendingCount > 0 && (
-            <div className="rounded-full border-2 border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-800">
-              {pendingCount} хүлээгдэж байна
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 rounded-lg bg-green-50 px-3 py-1.5 border border-green-200/60">
+              <div className="h-2 w-2 rounded-full bg-green-500" />
+              <span className="text-xs font-semibold text-green-700">
+                Идэвхтэй: {activeCount}
+              </span>
             </div>
-          )}
+            <div className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 border border-gray-200/60">
+              <div className="h-2 w-2 rounded-full bg-gray-400" />
+              <span className="text-xs font-semibold text-gray-600">
+                Дууссан: {expiredCount}
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="mt-5 bg-transparent border-0 p-0 rounded-none">
+        {/* Content Section */}
+        <div className="mt-8">
           {err && (
-            <div className="mb-3 rounded-xl border-2 border-red-500/30 bg-red-500/10 p-3 text-sm text-red-900">
-              {err}
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              <div className="flex gap-3">
+                <svg className="h-5 w-5 shrink-0 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                </svg>
+                {err}
+              </div>
             </div>
           )}
 
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-extrabold text-black">
-              Худалдан авалтын түүх
+          {fetching ? (
+            <div className="flex flex-col gap-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-[140px] w-full animate-pulse rounded-2xl bg-gray-200/60" />
+              ))}
             </div>
-            <div className="text-xs text-black/55">
-              {historyRows.length ? `${historyRows.length} бичлэг` : ""}
-            </div>
-          </div>
-
-          {historyRows.length === 0 ? (
-            <div className="py-8 text-center text-black/60">
-              Одоогоор худалдан авалтын түүх байхгүй байна.
+          ) : rows.length === 0 ? (
+            <div className="flex min-h-[250px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center">
+              <div className="mb-3 rounded-full bg-gray-50 p-3">
+                <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                </svg>
+              </div>
+              <h3 className="text-sm font-medium text-gray-900">Одоогоор хоосон байна</h3>
+              <p className="mt-1 text-sm text-gray-500">Та ямар нэгэн хичээл худалдаж аваагүй байна.</p>
             </div>
           ) : (
-            <div>
-              {historyRows.map((r, idx) => {
-                const st = String(r.status ?? "").toUpperCase();
-                const canContinue = st === "PENDING";
-
-                const thumb = (r.courseThumbUrl || "").trim();
-                const hasThumb = Boolean(thumb);
-
+            <div className="flex flex-col gap-3">
+              {rows.map((r) => {
+                const hasThumb = Boolean(r.thumbnailUrl);
                 const dur = durationText(r.durationLabel ?? null, r.durationDays ?? null);
+                const remainingDays = getRemainingDays(r.expiresAt);
+                const progress = getProgressPercent(r.paidAt, r.expiresAt);
+
+                const actionBtn = r.active ? (
+                  <Link
+                    href={`/course/${r.courseId}`}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-gray-700 active:scale-95 sm:px-5 sm:py-2.5"
+                  >
+                    Үзэх
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                  </Link>
+                ) : (
+                  <div className="inline-flex cursor-not-allowed items-center rounded-full bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-400 sm:px-5 sm:py-2.5">
+                    Хугацаа дууссан
+                  </div>
+                );
 
                 return (
-                  <div key={r.id}>
-                    <div
-                      className="
-                        rounded-2xl
-                        border border-black/15 bg-white/70
-                        p-6 min-h-[110px]
-                        sm:border-white/10 sm:bg-white/5 sm:min-h-[120px]
-                      "
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                        <div className="min-w-0 flex items-start gap-3">
-                          <div className="shrink-0">
-                            <div className="h-11 w-11 overflow-hidden rounded-xl border-2 border-black/10 bg-white">
-                              {hasThumb ? (
-                                <Image
-                                  src={thumb}
-                                  alt={r.courseTitle || "Course"}
-                                  width={44}
-                                  height={44}
-                                  className="h-11 w-11 object-cover"
-                                />
-                              ) : (
-                                <div className="h-11 w-11" />
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="min-w-0">
-                            <div className="truncate text-[15px] font-extrabold text-black sm:text-[16px]">
-                              {r.courseTitle?.trim() ||
-                                (r.courseId ? `Course: ${r.courseId}` : "—")}
-                            </div>
-
-                            <div className="mt-1 flex flex-wrap items-center gap-2">
-                              <div className="text-[11px] font-semibold text-black/60">
-                                #{r.id.slice(0, 8).toUpperCase()}
-                              </div>
-
-                              <span
-                                className={`inline-flex items-center rounded-full border-2
-                                  px-2 py-[2px] leading-none text-[11px]
-                                  ${badge(r.status)}`}
-                              >
-                                {label(r.status)}
-                              </span>
-                            </div>
-                          </div>
+                  <div
+                    key={r.courseId}
+                    className={`relative flex items-start gap-3 overflow-hidden rounded-2xl bg-white px-4 py-4 shadow-sm transition-shadow hover:shadow-md border-l-4 sm:items-center sm:gap-5 sm:px-5 sm:py-5 ${
+                      r.active ? "border-l-green-500" : "border-l-gray-200"
+                    }`}
+                  >
+                    {/* Thumbnail */}
+                    <div className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-xl bg-gray-100 sm:h-[80px] sm:w-[80px]">
+                      {hasThumb ? (
+                        <Image
+                          src={r.thumbnailUrl}
+                          alt={r.title}
+                          fill
+                          className="object-cover"
+                          sizes="80px"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <svg className="h-6 w-6 text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
                         </div>
+                      )}
+                    </div>
 
-                        <div className="sm:text-right sm:shrink-0">
-                          {/* ✅ Desktop дээр үнэ том/тод */}
-                          <div className="hidden text-sm sm:text-[18px] font-black tracking-tight text-black sm:block">
-  <span className="text-black/45 font-semibold">
-    {dur}
-  </span>
-  <span className="mx-1 text-black/30 font-semibold">/</span>
-  <span>
-    {money(r.amount)}
-  </span>
-</div>
+                    {/* Details */}
+                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                      {/* Title */}
+                      <h3 className={`line-clamp-2 text-sm font-bold leading-snug sm:text-base ${r.active ? "text-gray-900" : "text-gray-500"}`}>
+                        {r.title}
+                      </h3>
 
-                          {/* ✅ MOBILE: “хоног / үнэ” мөр ХЭВЭЭР (устгахгүй) */}
-                          <div className="mt-2 flex items-center justify-center gap-2 sm:hidden">
-                            <span className="text-[16px] font-semibold text-black/45">
-                              {dur}
-                            </span>
-                            <span className="text-[14px] font-semibold text-black/25">/</span>
-                            <span className="text-[18px] leading-none font-black text-black">
-                              {money(r.amount)}
-                            </span>
-                          </div>
+                      {/* Mobile: badge + button in same row */}
+                      <div className="flex items-center justify-between sm:hidden">
+                        {r.active ? (
+                          <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold tracking-widest text-green-700 ring-1 ring-inset ring-green-600/20">
+                            ИДЭВХТЭЙ
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-bold tracking-widest text-gray-500 ring-1 ring-inset ring-gray-400/20">
+                            ДУУССАН
+                          </span>
+                        )}
+                        {actionBtn}
+                      </div>
 
-                          {canContinue ? (
-                            <Link
-                              href={`/pay/${r.id}`}
-                              className="
-                                mt-3
-                                inline-flex w-full items-center justify-center
-                                rounded-2xl
-                                border border-black/90 hover:border-black/20
-                                bg-gradient-to-r from-cyan-300 to-blue-300
-                                px-4 py-3 text-[13px] font-extrabold !text-white
-                                shadow-[0_10px_28px_rgba(37,99,235,0.25)]
-                                active:scale-[0.99]
-                                transition
-                                sm:mt-2 sm:w-auto sm:rounded-xl sm:border-2 sm:border-white sm:bg-white/10 sm:px-3 sm:py-2 sm:text-xs sm:font-semibold sm:text-black sm:shadow-none sm:active:scale-100
-                              "
-                            >
-                              Төлбөр үргэлжлүүлэх
-                            </Link>
-                          ) : (
-                            <div className="mt-3 text-center text-xs font-medium text-black/45 sm:mt-2 sm:text-right">
-                              —
-                            </div>
-                          )}
+                      {/* Desktop: badge only */}
+                      <div className="hidden sm:flex items-center gap-2">
+                        {r.active ? (
+                          <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold tracking-widest text-green-700 ring-1 ring-inset ring-green-600/20">
+                            ИДЭВХТЭЙ
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-bold tracking-widest text-gray-500 ring-1 ring-inset ring-gray-400/20">
+                            ДУУССАН
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Info grid */}
+                      <div className="grid grid-cols-3 gap-x-2 sm:flex sm:gap-6">
+                        <div className="min-w-0">
+                          <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-[10px]">Огноо</p>
+                          <p className="text-xs font-semibold text-gray-800 sm:text-sm">{fmtDate(r.paidAt)}</p>
                         </div>
+                        <div className="min-w-0">
+                          <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-[10px]">Дуусах</p>
+                          <p className="text-xs font-semibold text-gray-800 sm:text-sm">{fmtDate(r.expiresAt)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 sm:text-[10px]">Хугацаа</p>
+                          <p className="text-xs font-semibold text-gray-800 sm:text-sm">{dur}</p>
+                        </div>
+                      </div>
+
+                      {/* Progress bar + remaining label */}
+                      <div className="flex flex-col gap-1">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                          <div
+                            className={`h-full rounded-full transition-all ${r.active ? "bg-green-500" : "bg-gray-300"}`}
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                        <p className="text-right text-[11px] font-medium text-gray-400">
+                          {r.active
+                            ? remainingDays === null
+                              ? "Эхэлсэн"
+                              : remainingDays === 0
+                              ? "Өнөөдөр дуусна"
+                              : `${remainingDays} хоног үлдсэн`
+                            : "Эхэлсэн"}
+                        </p>
                       </div>
                     </div>
 
-                    {/* ✅ Divider: УТСАН дээр харагдахгүй, зөвхөн sm+ дээр харагдана */}
-                    {idx < historyRows.length - 1 && (
-                      <div className="my-2.5 hidden border-t border-dashed border-black/35 sm:block" />
-                    )}
+                    {/* Desktop-only action button */}
+                    <div className="hidden shrink-0 sm:block">
+                      {actionBtn}
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
-
-        {/* ✅ “Худалдаж авсан хичээлүүд” хэсгийг бүр мөсөн устгав */}
       </div>
     </div>
   );

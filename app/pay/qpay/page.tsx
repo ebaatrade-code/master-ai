@@ -105,13 +105,13 @@ export default function QPayPage() {
     const tick = async () => {
       try {
         const idToken = await user.getIdToken();
-        const res = await fetch("/api/qpay/check", {
+        const res = await fetch("/api/qpay/checkout/check", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ invoiceDocId: invoice.invoiceDocId }),
+          body: JSON.stringify({ ref: invoice.invoiceDocId }),
         });
 
         const data = await res.json().catch(() => null);

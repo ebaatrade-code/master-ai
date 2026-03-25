@@ -10,7 +10,7 @@ export async function requireAdminFromRequest(req: Request) {
   }
 
   try {
-    const decoded = await adminAuth().verifyIdToken(idToken);
+    const decoded = await adminAuth().verifyIdToken(idToken, true); // true = check revocation
     const uid = decoded.uid;
 
     const userRef = adminDb().collection("users").doc(uid);
