@@ -58,7 +58,7 @@ function SideNavLink({
       href={href}
       onClick={onGo}
       className={cn(
-        "flex items-center gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold transition-colors",
+        "flex w-full items-center gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold transition-colors",
         active
           ? "bg-amber-400 text-amber-900 font-bold"
           : "text-black/70 hover:bg-black/[0.04] active:bg-black/[0.07]"
@@ -93,7 +93,7 @@ function SideNavLinkBadge({
       href={href}
       onClick={onGo}
       className={cn(
-        "flex items-center gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold transition-colors",
+        "flex w-full items-center gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold transition-colors",
         active
           ? "bg-amber-400 text-amber-900 font-bold"
           : "text-black/70 hover:bg-black/[0.04] active:bg-black/[0.07]"
@@ -126,7 +126,7 @@ function SideNavButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold text-black/70 hover:bg-black/[0.04] active:bg-black/[0.07] transition-colors"
+      className="flex w-full items-center text-left gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold text-black/70 hover:bg-black/[0.04] active:bg-black/[0.07] transition-colors"
     >
       <span className="flex-shrink-0 text-black/45">{icon}</span>
       <span className="flex-1">{label}</span>
