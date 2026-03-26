@@ -90,9 +90,11 @@ async function fetchWithTimeout(
 let cachedAccessToken: { token: string; expMs: number } | null = null;
 
 async function getQPayAccessToken(): Promise<string> {
-  const baseUrl = envOrThrow("QPAY_BASE_URL").replace(/\/+$/, "");
-  const username = envOrThrow("QPAY_USERNAME");
-  const password = envOrThrow("QPAY_PASSWORD");
+  const baseUrl = (process.env.QPAY_BASE_URL || "https://merchant.qpay.mn").replace(/\/+$/, "");
+  // Support both QPAY_USERNAME/PASSWORD and QPAY_CLIENT_ID/CLIENT_SECRET
+  const username = process.env.QPAY_USERNAME || process.env.QPAY_CLIENT_ID || "";
+  const password = process.env.QPAY_PASSWORD || process.env.QPAY_CLIENT_SECRET || "";
+  if (!username || !password) throw new Error("Missing QPay credentials");
 
   const now = Date.now();
   if (cachedAccessToken && cachedAccessToken.expMs > now + 30_000) {
@@ -137,9 +139,11 @@ async function createInvoice(payload: {
   callbackUrl: string;
   senderInvoiceNo: string;
 }): Promise<AnyObj> {
-  const baseUrl = envOrThrow("QPAY_BASE_URL").replace(/\/+$/, "");
-  const invoiceCode = envOrThrow("QPAY_INVOICE_CODE");
-  const receiverCode = envOrThrow("QPAY_INVOICE_RECEIVER_CODE");
+  const baseUrl = (process.env.QPAY_BASE_URL || "https://merchant.qpay.mn").replace(/\/+$/, "");
+  const invoiceCode = process.env.QPAY_INVOICE_CODE || "";
+  if (!invoiceCode) throw new Error("Missing env: QPAY_INVOICE_CODE");
+  const receiverCode = process.env.QPAY_INVOICE_RECEIVER_CODE || process.env.QPAY_RECEIVER_CODE || "";
+  if (!receiverCode) throw new Error("Missing env: QPAY_INVOICE_RECEIVER_CODE");
   const branchCode = process.env.QPAY_BRANCH_CODE || "ONLINE";
 
   const accessToken = await getQPayAccessToken();
@@ -197,7 +201,9 @@ function extractShortUrlFromUrls(urls: any): string {
   if (!Array.isArray(urls)) return "";
   for (const u of urls) {
     const link = typeof u?.link === "string" ? u.link.trim() : "";
-    if (link && /https?:\/\/s\.qpay\.mn\//i.test(link)) return link;
+    // Match both https://s.qpay.mn/... and https://qpay.mn/s/... formats
+    if (link && /qpay\.mn\/(s\/|q\/)/i.test(link)) return link;
+    if (link && /^https?:\/\/s\.qpay\.mn\//i.test(link)) return link;
   }
   return "";
 }
@@ -253,8 +259,11 @@ function normalizeQPayUrls(input: any): SafeQPayUrl[] {
   const out: SafeQPayUrl[] = [];
 
   for (const item of input.slice(0, 20)) {
-    const link = sanitizeString(item?.link, 1200);
-    if (!/^https?:\/\//i.test(link)) continue;
+    // Try both "link" and "url" field names (QPay API uses either)
+    const link = sanitizeString(item?.link || item?.url || item?.deeplink, 1200);
+    // Block dangerous schemes; allow https + bank deeplink custom schemes (khanbank://, golomtbank://, etc.)
+    if (!link || /^(javascript|data|vbscript):/i.test(link)) continue;
+    if (!/^[a-z][a-z0-9+\-.]*:\/\//i.test(link)) continue;
 
     out.push({
       name: sanitizeString(item?.name, 120),
@@ -483,8 +492,10 @@ export async function POST(req: NextRequest) {
     // ✅ 6) Хэрвээ ACTIVE doc дээр QPay бэлэн бол reuse (amount нь server price-тай таарна)
     const prevAmount = Number(activeData?.amount);
     const sameAmount = Number.isFinite(prevAmount) && prevAmount === amount;
+    // Only reuse if cached invoice has bank deeplinks — otherwise create fresh to get URLs
+    const cachedHasUrls = Array.isArray(activeData?.urls) && activeData.urls.length > 0;
 
-    if (activeData && sameAmount && hasReadyQpay(activeData)) {
+    if (activeData && sameAmount && hasReadyQpay(activeData) && cachedHasUrls) {
       await payDocRef.set(
         {
           uid: decoded.uid,

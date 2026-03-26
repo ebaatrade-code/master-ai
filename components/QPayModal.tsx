@@ -64,10 +64,13 @@ function num(x: unknown) {
   return NaN;
 }
 
-function isSafeHttpUrl(v: unknown) {
+function isSafeDeeplinkUrl(v: unknown) {
   const s = String(v || "").trim();
   if (!s) return false;
-  return /^https?:\/\//i.test(s);
+  // Block dangerous schemes
+  if (/^(javascript|data|vbscript):/i.test(s)) return false;
+  // Allow https, http, and bank custom schemes (khanbank://, golomtbank://, etc.)
+  return /^[a-z][a-z0-9+\-.]*:\/\//i.test(s);
 }
 
 function normalizeSafeUrls(input: unknown): Deeplink[] {
@@ -76,8 +79,9 @@ function normalizeSafeUrls(input: unknown): Deeplink[] {
   const out: Deeplink[] = [];
 
   for (const item of input.slice(0, 20)) {
-    const link = String((item as any)?.link || "").trim();
-    if (!isSafeHttpUrl(link)) continue;
+    // Try both "link" and "url" field names
+    const link = String((item as any)?.link || (item as any)?.url || "").trim();
+    if (!isSafeDeeplinkUrl(link)) continue;
 
     out.push({
       name: String((item as any)?.name || "").trim().slice(0, 120),
@@ -200,7 +204,7 @@ export default function QPayModal({
 
   const shortUrl = useMemo(() => {
     const s = String(liveShortUrl || data?.shortUrl || "").trim();
-    return isSafeHttpUrl(s) ? s : "";
+    return isSafeDeeplinkUrl(s) ? s : "";
   }, [liveShortUrl, data?.shortUrl]);
 
   // =========================
@@ -285,7 +289,7 @@ export default function QPayModal({
         if (urls.length) setLiveUrls(urls);
 
         const su = String(j?.shortUrl || "").trim();
-        if (isSafeHttpUrl(su)) setLiveShortUrl(su);
+        if (isSafeDeeplinkUrl(su)) setLiveShortUrl(su);
 
         const a = num(j?.amount);
         if (Number.isFinite(a) && a > 0) setLiveAmount(Math.round(a));

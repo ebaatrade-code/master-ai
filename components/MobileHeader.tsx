@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
-// ✅ Firestore unread count
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
+import { useAuth } from "@/components/AuthProvider";
 
 type Props = {
   isAuthed: boolean;
@@ -18,20 +19,10 @@ function cn(...xs: Array<string | false | undefined | null>) {
   return xs.filter(Boolean).join(" ");
 }
 
-/* =========================
-   Unread Badge (Facebook-like)
-========================= */
-function UnreadBadge({
-  count,
-  className,
-}: {
-  count: number;
-  className?: string;
-}) {
+/* ── Unread badge ─────────────────────────────────────────── */
+function UnreadBadge({ count, className }: { count: number; className?: string }) {
   if (!count || count <= 0) return null;
-
   const label = count > 99 ? "99+" : String(count);
-
   return (
     <span
       className={cn(
@@ -48,19 +39,126 @@ function UnreadBadge({
   );
 }
 
+/* ── Nav link with optional active highlight ──────────────── */
+function SideNavLink({
+  href,
+  label,
+  icon,
+  active,
+  onGo,
+}: {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  active?: boolean;
+  onGo: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onGo}
+      className={cn(
+        "flex items-center gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold transition-colors",
+        active
+          ? "bg-amber-400 text-amber-900 font-bold"
+          : "text-black/70 hover:bg-black/[0.04] active:bg-black/[0.07]"
+      )}
+    >
+      <span className={cn("flex-shrink-0", active ? "text-amber-800" : "text-black/45")}>
+        {icon}
+      </span>
+      <span className="flex-1">{label}</span>
+    </Link>
+  );
+}
+
+/* ── Nav link with notification badge ────────────────────── */
+function SideNavLinkBadge({
+  href,
+  label,
+  icon,
+  badge,
+  active,
+  onGo,
+}: {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  badge: number;
+  active?: boolean;
+  onGo: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onGo}
+      className={cn(
+        "flex items-center gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold transition-colors",
+        active
+          ? "bg-amber-400 text-amber-900 font-bold"
+          : "text-black/70 hover:bg-black/[0.04] active:bg-black/[0.07]"
+      )}
+    >
+      <span className={cn("flex-shrink-0", active ? "text-amber-800" : "text-black/45")}>
+        {icon}
+      </span>
+      <span className="flex-1">{label}</span>
+      {badge > 0 && (
+        <span className="inline-flex min-w-[22px] h-[22px] items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-black px-1.5">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/* ── Nav button (unauthenticated state) ───────────────────── */
+function SideNavButton({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-2xl px-3 py-[11px] text-[15px] font-semibold text-black/70 hover:bg-black/[0.04] active:bg-black/[0.07] transition-colors"
+    >
+      <span className="flex-shrink-0 text-black/45">{icon}</span>
+      <span className="flex-1">{label}</span>
+    </button>
+  );
+}
+
+/* ── Section label ───────────────────────────────────────── */
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <div className="px-3 pt-4 pb-1 text-[10px] font-extrabold tracking-[0.20em] text-black/35 uppercase">
+      {label}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN COMPONENT
+═══════════════════════════════════════════════════════════ */
 export default function MobileHeader({
   isAuthed,
   loadingAuth,
   onLogin,
   onLogout,
 }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-
-  // ✅ unread notifications count (mobile)
   const [unreadCount, setUnreadCount] = useState(0);
+  const pathname = usePathname();
+  const { user } = useAuth();
 
+  /* scroll shadow */
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 6);
     onScroll();
@@ -68,89 +166,77 @@ export default function MobileHeader({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  /* ESC close */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setMenuOpen(false);
-        setProfileOpen(false);
-      }
+      if (e.key === "Escape") setDrawerOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const closeAll = () => {
-    setMenuOpen(false);
-    setProfileOpen(false);
-  };
-
-  // ✅ realtime unread count (only when authed)
+  /* realtime unread count */
   useEffect(() => {
     if (!isAuthed) {
       setUnreadCount(0);
       return;
     }
-
     const uid = auth.currentUser?.uid;
     if (!uid) {
       setUnreadCount(0);
       return;
     }
-
     const q = query(
       collection(db, "users", uid, "notifications"),
       orderBy("createdAt", "desc")
     );
-
     const unsub = onSnapshot(
       q,
       (snap) => {
         let c = 0;
         snap.forEach((d) => {
           const data: any = d.data();
-          const isUnread = !data?.readAt && data?.read !== true;
-          if (isUnread) c += 1;
+          if (!data?.readAt && data?.read !== true) c += 1;
         });
         setUnreadCount(c);
       },
       () => setUnreadCount(0)
     );
-
     return () => unsub();
   }, [isAuthed]);
 
-  // ✅ label (optional)
-  const notiLabel = useMemo(() => {
-    if (unreadCount <= 0) return "Шинэ мэдэгдэл";
-    return "Шинэ мэдэгдэл";
-  }, [unreadCount]);
+  /* user display info */
+  const displayName =
+    user?.displayName || user?.email?.split("@")[0] || "Хэрэглэгч";
+  const joinYear = user?.metadata?.creationTime
+    ? new Date(user.metadata.creationTime).getFullYear()
+    : null;
+  const photoURL = user?.photoURL;
+  const initials = displayName.slice(0, 2).toUpperCase();
+
+  const closeDrawer = () => setDrawerOpen(false);
+  const openDrawer = () => setDrawerOpen(true);
 
   return (
     <>
-      {/* TOP BAR (mobile only) */}
+      {/* ── TOP BAR ─────────────────────────────────────────── */}
       <header
         className={cn(
-          "md:hidden sticky top-0 z-50 w-full",
-          "text-black",
-          "bg-white",
-          "border-b border-black/10",
+          "md:hidden sticky top-0 z-50 w-full bg-white border-b border-black/10",
           scrolled && "shadow-[0_8px_22px_rgba(0,0,0,0.10)]"
         )}
       >
         <div className="mx-auto flex items-center justify-between px-3 h-[calc(48px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
-          {/* Left: hamburger */}
+          {/* hamburger */}
           <button
-            onClick={() => {
-              setProfileOpen(false);
-              setMenuOpen(true);
-            }}
+            onClick={openDrawer}
             className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5"
-            aria-label="Open menu"
+            aria-label="Цэс нээх"
           >
             <BurgerIcon />
           </button>
 
-          {/* Center: logo */}
+          {/* logo */}
           <Link
             href="/"
             className="truncate text-[12px] font-extrabold tracking-[0.28em] text-black/80"
@@ -158,289 +244,235 @@ export default function MobileHeader({
             EBACREATOR
           </Link>
 
-          {/* Right: profile + ✅ unread badge */}
+          {/* right: profile button (also opens drawer) + unread badge */}
           <button
-            onClick={() => {
-              setMenuOpen(false);
-              setProfileOpen(true);
-            }}
+            onClick={openDrawer}
             className="relative inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5"
-            aria-label="Open profile"
+            aria-label="Профайл нээх"
           >
-            {/* ✅ show unread count even without opening profile */}
             {isAuthed && <UnreadBadge count={unreadCount} />}
-            <UserIcon />
+            {photoURL ? (
+              <img
+                src={photoURL}
+                alt={displayName}
+                className="h-7 w-7 rounded-full object-cover"
+              />
+            ) : (
+              <UserIcon />
+            )}
           </button>
         </div>
-
-        {/* subtle fade */}
         <div className="pointer-events-none h-4 w-full bg-gradient-to-b from-white to-transparent" />
       </header>
 
-      {/* ✅ MENU DRAWER */}
-      <Overlay open={menuOpen} onClose={closeAll} side="left" title="MENU">
-        <div className="space-y-3">
-          {/* ✅ /courses биш /contents */}
-          <DrawerLink href="/contents" label="Сургалтууд" onGo={closeAll} />
-
-          {/* ✅ Миний сургалтууд */}
-          {isAuthed ? (
-            <DrawerLink href="/my-content" label="Миний сургалтууд" onGo={closeAll} />
-          ) : (
-            <DrawerButton
-              label="Миний сургалтууд"
-              onClick={() => {
-                closeAll();
-                onLogin();
-              }}
-            />
+      {/* ── UNIFIED DRAWER ──────────────────────────────────── */}
+      <div
+        className={cn(
+          "fixed inset-0 z-[70] md:hidden",
+          drawerOpen ? "pointer-events-auto" : "pointer-events-none"
+        )}
+        aria-hidden={!drawerOpen}
+      >
+        {/* backdrop */}
+        <div
+          className={cn(
+            "absolute inset-0 bg-black/35 transition-opacity duration-200",
+            drawerOpen ? "opacity-100" : "opacity-0"
           )}
+          onClick={closeDrawer}
+        />
 
-          {/* ✅ Худалдан авалтын түүх */}
-          {isAuthed ? (
-            <DrawerLink
-              href="/profile/purchases"
-              label="Худалдан авалтын түүх"
-              onGo={closeAll}
-            />
-          ) : (
-            <DrawerButton
-              label="Худалдан авалтын түүх"
-              onClick={() => {
-                closeAll();
-                onLogin();
-              }}
-            />
+        {/* panel */}
+        <div
+          className={cn(
+            "absolute top-0 left-0 h-full w-[86%] max-w-[340px] bg-white",
+            "shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_40px_120px_rgba(0,0,0,0.25)]",
+            "transition-transform duration-200 ease-out",
+            "flex flex-col overflow-y-auto",
+            drawerOpen ? "translate-x-0" : "-translate-x-full"
           )}
-        </div>
-      </Overlay>
+        >
+          {/* close button */}
+          <div className="flex justify-end px-4 pt-4 pb-0">
+            <button
+              onClick={closeDrawer}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5"
+              aria-label="Хаах"
+            >
+              <XIcon />
+            </button>
+          </div>
 
-      {/* PROFILE DRAWER */}
-      <Overlay open={profileOpen} onClose={closeAll} side="right" title="PROFILE">
-        <div className="space-y-3">
+          {/* ── PROFILE HEADER ──────────────────────────────── */}
           {loadingAuth ? (
-            <div className="h-10 w-full animate-pulse rounded-xl bg-black/10" />
+            <div className="flex items-center gap-3 px-5 py-4">
+              <div className="h-[60px] w-[60px] rounded-full bg-black/10 animate-pulse flex-shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-28 bg-black/10 rounded animate-pulse" />
+                <div className="h-3 w-16 bg-black/10 rounded animate-pulse" />
+              </div>
+            </div>
           ) : isAuthed ? (
-            <>
-              <Link
-                href="/profile"
-                onClick={closeAll}
-                className="flex items-center justify-between rounded-xl border border-black/10 bg-black/[0.03] px-4 py-3 text-[15px] font-extrabold text-black active:scale-[0.99]"
-              >
-                <span>Профайл</span>
-                <span className="text-black/40 text-lg leading-none">›</span>
-              </Link>
+            <div className="flex items-center gap-4 px-5 py-4">
+              {/* avatar */}
+              <div className="h-[64px] w-[64px] flex-shrink-0 rounded-full border-[3px] border-amber-400 bg-amber-50 overflow-hidden flex items-center justify-center">
+                {photoURL ? (
+                  <img
+                    src={photoURL}
+                    alt={displayName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-amber-700 font-black text-[20px] leading-none">
+                    {initials}
+                  </span>
+                )}
+              </div>
+              {/* info */}
+              <div className="min-w-0">
+                <div className="text-[16px] font-extrabold text-black leading-tight truncate">
+                  {displayName}
+                </div>
+                <div className="text-[13px] text-black/50 mt-0.5">Гишүүн</div>
+                {joinYear && (
+                  <div className="text-[10px] font-bold tracking-[0.14em] text-black/30 uppercase mt-1">
+                    НЭГДСЭН {joinYear}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* not logged in → login prompt */
+            <div className="px-5 py-4">
+              <div className="rounded-2xl border border-black/10 bg-black/[0.03] p-4">
+                <div className="text-sm font-semibold text-black">Нэвтрэх</div>
+                <div className="mt-1 text-xs text-black/55">
+                  Профайл руу орохын тулд нэвтэрнэ.
+                </div>
+                <button
+                  onClick={() => {
+                    onLogin();
+                    closeDrawer();
+                  }}
+                  className="mt-4 w-full rounded-xl bg-amber-400 text-amber-900 px-4 py-3 text-sm font-bold active:scale-[0.99] transition"
+                >
+                  Нэвтрэх
+                </button>
+              </div>
+            </div>
+          )}
 
-              {/* ✅ Шинэ мэдэгдэл (profile drawer дээр харагдана + badge) */}
-              <DrawerLinkWithBadge
-                href="/notifications"
-                label={notiLabel}
-                badge={unreadCount}
-                onGo={closeAll}
+          {/* divider */}
+          <div className="mx-5 border-t border-black/[0.07]" />
+
+          {/* ── АКАДЕМИК section ────────────────────────────── */}
+          <div className="px-3 flex-1">
+            <SectionLabel label="Академик" />
+            <SideNavLink
+              href="/contents"
+              label="Сургалтууд"
+              icon={<CoursesIcon />}
+              active={
+                pathname === "/contents" ||
+                pathname.startsWith("/contents/") ||
+                pathname === "/courses" ||
+                pathname.startsWith("/courses/")
+              }
+              onGo={closeDrawer}
+            />
+            {isAuthed ? (
+              <SideNavLink
+                href="/my-content"
+                label="Миний сургалтууд"
+                icon={<MyCourseIcon />}
+                active={
+                  pathname === "/my-content" ||
+                  pathname.startsWith("/my-content/")
+                }
+                onGo={closeDrawer}
               />
-
-              {/* ✅ NEW: “АСУУДАЛ ШИЙДҮҮЛЭХ” — Шинэ мэдэгдэлийн яг доор */}
-              <DrawerLink
-                href="/request?source=mobile_profile"
-                label="Асуудал шийдүүлэх"
-                onGo={closeAll}
+            ) : (
+              <SideNavButton
+                label="Миний сургалтууд"
+                icon={<MyCourseIcon />}
+                onClick={() => {
+                  closeDrawer();
+                  onLogin();
+                }}
               />
+            )}
+            {isAuthed ? (
+              <SideNavLink
+                href="/profile/purchases"
+                label="Худалдан авалтын түүх"
+                icon={<PurchaseIcon />}
+                active={pathname === "/profile/purchases"}
+                onGo={closeDrawer}
+              />
+            ) : (
+              <SideNavButton
+                label="Худалдан авалтын түүх"
+                icon={<PurchaseIcon />}
+                onClick={() => {
+                  closeDrawer();
+                  onLogin();
+                }}
+              />
+            )}
 
+            {/* ── БҮРТГЭЛ section ─────────────────────────── */}
+            {isAuthed && (
+              <>
+                <SectionLabel label="Бүртгэл" />
+                <SideNavLink
+                  href="/profile"
+                  label="Профайл"
+                  icon={<ProfileIcon />}
+                  active={pathname === "/profile"}
+                  onGo={closeDrawer}
+                />
+                <SideNavLinkBadge
+                  href="/notifications"
+                  label="Мэдэгдэлүүд"
+                  icon={<BellIcon />}
+                  badge={unreadCount}
+                  active={pathname === "/notifications"}
+                  onGo={closeDrawer}
+                />
+                <SideNavLink
+                  href="/request?source=mobile_menu"
+                  label="Тусламж"
+                  icon={<HelpIcon />}
+                  active={pathname === "/request"}
+                  onGo={closeDrawer}
+                />
+              </>
+            )}
+          </div>
+
+          {/* ── LOGOUT ────────────────────────────────────── */}
+          {isAuthed && (
+            <div className="px-4 py-5">
               <button
                 onClick={() => {
                   onLogout?.();
-                  closeAll();
+                  closeDrawer();
                 }}
-                className="
-  mt-4 w-full rounded-xl
-  bg-red-500 text-white
-  px-4 py-3 text-sm font-semibold
-  shadow-[0_8px_25px_rgba(239,68,68,0.35)]
-  hover:bg-red-400
-  active:scale-[0.99]
-  transition
-">
-                Гарах
-              </button>
-            </>
-          ) : (
-            <div className="rounded-2xl border border-black/10 bg-black/[0.03] p-4">
-              <div className="text-sm font-semibold text-black">Нэвтрэх</div>
-              <div className="mt-1 text-xs text-black/60">
-                Профайл руу орохын тулд нэвтэрнэ.
-              </div>
-
-              <button
-                onClick={() => {
-                  onLogin();
-                  closeAll();
-                }}
-                className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black ring-1 ring-blue-400/30 active:scale-[0.99] md:bg-black md:text-white md:ring-white/10"
+                className="w-full rounded-xl bg-red-500 text-white px-4 py-3 text-sm font-semibold shadow-[0_8px_25px_rgba(239,68,68,0.30)] hover:bg-red-400 active:scale-[0.99] transition"
               >
-                Нэвтрэх
+                Гарах
               </button>
             </div>
           )}
         </div>
-      </Overlay>
+      </div>
     </>
   );
 }
 
-function DrawerLink({
-  href,
-  label,
-  onGo,
-}: {
-  href: string;
-  label: string;
-  onGo: () => void;
-}) {
-  return (
-    <Link
-      href={href}
-      onClick={onGo}
-      className="
-        flex items-center justify-between
-        rounded-xl border border-black/10 bg-black/[0.03]
-        px-4 py-3
-        text-[15px] font-extrabold text-black
-        hover:bg-black/[0.05]
-        active:scale-[0.99]
-      "
-    >
-      <span>{label}</span>
-      <span className="text-black/40 text-lg leading-none">›</span>
-    </Link>
-  );
-}
-
-/* ✅ Link + badge row (mobile drawers) */
-function DrawerLinkWithBadge({
-  href,
-  label,
-  badge,
-  onGo,
-}: {
-  href: string;
-  label: string;
-  badge: number;
-  onGo: () => void;
-}) {
-  return (
-    <Link
-      href={href}
-      onClick={onGo}
-      className="
-        flex items-center justify-between
-        rounded-xl border border-black/10 bg-black/[0.03]
-        px-4 py-3
-        text-[15px] font-extrabold text-black
-        hover:bg-black/[0.05]
-        active:scale-[0.99]
-      "
-    >
-      <span className="inline-flex items-center gap-2">
-        {label}
-        {badge > 0 ? (
-          <span className="relative inline-flex">
-            <UnreadBadge
-              count={badge}
-              className="!static !min-w-[22px] !h-[22px] !ring-0 !shadow-none"
-            />
-          </span>
-        ) : null}
-      </span>
-      <span className="text-black/40 text-lg leading-none">›</span>
-    </Link>
-  );
-}
-
-function DrawerButton({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="
-        flex w-full items-center justify-between
-        rounded-xl border border-black/10 bg-black/[0.03]
-        px-4 py-3
-        text-[15px] font-extrabold text-black
-        hover:bg-black/[0.05]
-        active:scale-[0.99]
-      "
-    >
-      <span>{label}</span>
-      <span className="text-black/40 text-lg leading-none">›</span>
-    </button>
-  );
-}
-
-function Overlay({
-  open,
-  onClose,
-  side,
-  title,
-  children,
-}: {
-  open: boolean;
-  onClose: () => void;
-  side: "left" | "right";
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        "fixed inset-0 z-[70] md:hidden",
-        open ? "pointer-events-auto" : "pointer-events-none"
-      )}
-      aria-hidden={!open}
-    >
-      <div
-        className={cn(
-          "absolute inset-0 bg-black/35 transition-opacity",
-          open ? "opacity-100" : "opacity-0"
-        )}
-        onClick={onClose}
-      />
-      <div
-        className={cn(
-          "absolute top-0 h-full w-[86%] max-w-[360px] bg-white",
-          "shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_40px_120px_rgba(0,0,0,0.25)]",
-          "transition-transform duration-200 ease-out",
-          side === "left" ? "left-0" : "right-0",
-          open
-            ? "translate-x-0"
-            : side === "left"
-            ? "-translate-x-full"
-            : "translate-x-full"
-        )}
-      >
-        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3">
-          <div className="text-xs font-extrabold tracking-[0.18em] text-black/70">
-            {title}
-          </div>
-          <button
-            onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5"
-            aria-label="Close"
-          >
-            <XIcon />
-          </button>
-        </div>
-        <div className="p-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
+/* ════════════════════════════════════════════════════════════
+   ICONS  (24×24 viewBox, stroke-based)
+════════════════════════════════════════════════════════════ */
 function BurgerIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -460,12 +492,7 @@ function UserIcon() {
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <path
-        d="M12 13a4 4 0 1 0-4-4 4 4 0 0 0 4 4z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <circle cx="12" cy="9" r="4" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
@@ -475,6 +502,125 @@ function XIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <path d="M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CoursesIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function MyCourseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M22 10v6M2 10l10-5 10 5-10 5-10-5z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 12v5c3.33 1.67 8.67 1.67 12 0v-5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function PurchaseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <rect
+        x="9"
+        y="3"
+        width="6"
+        height="4"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M9 12h6M9 16h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M4 20c0-4 3.58-7 8-7s8 3 8 7"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M13.73 21a2 2 0 0 1-3.46 0"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="17" r="0.5" fill="currentColor" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }

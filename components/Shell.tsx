@@ -76,7 +76,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <main className="flex-1 bg-white text-black">{children}</main>
 
             {/* ✅ FOOTER — Саарал хэвээр */}
-            <div className="bg-gray-200 border-t border-gray-200">
+            <div className="bg-gray-200 border-t border-black/10">
               <Footer />
             </div>
           </div>

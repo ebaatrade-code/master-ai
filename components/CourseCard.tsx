@@ -22,6 +22,7 @@ type Course = {
 const money = (n: number) =>
   Number.isFinite(n) ? n.toLocaleString("mn-MN") : "0";
 
+
 type Props = {
   course: Course;
   isPurchased: boolean;
@@ -233,22 +234,22 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
         </div>
 
         {/* ── BODY ── */}
-        <div className="px-5 pt-4 pb-5">
+        <div className="px-3 pt-2.5 pb-3 md:px-5 md:pt-4 md:pb-5">
 
           {/* Year */}
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/35">
+          <p className="text-[9px] md:text-[11px] font-semibold uppercase tracking-[0.08em] text-black/35">
             {course.year ?? "2025"}
           </p>
 
           {/* Title */}
-          <p className="mt-1.5 text-[15px] font-bold leading-snug text-black line-clamp-2 min-h-[42px]">
+          <p className="mt-1 md:mt-1.5 text-[12px] md:text-[15px] font-bold leading-snug text-black line-clamp-2 md:min-h-[42px]">
             {course.title}
           </p>
 
           {/* Duration (optional) */}
           {course.durationLabel && (
-            <div className="mt-2 flex items-center gap-1.5 text-[12px] text-black/38 font-medium">
-              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <div className="mt-1.5 md:mt-2 flex items-center gap-1 md:gap-1.5 text-[10px] md:text-[12px] text-black/38 font-medium">
+              <svg className="h-3 w-3 md:h-3.5 md:w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3" strokeLinecap="round"/>
               </svg>
               {course.durationLabel}
@@ -256,20 +257,20 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
           )}
 
           {/* Divider */}
-          <div className="mt-4 mb-4 h-px bg-black/6" />
+          <div className="mt-2.5 mb-2.5 md:mt-4 md:mb-4 h-px bg-black/6" />
 
-          {/* Price + CTA */}
-          <div className="flex items-center justify-between gap-2">
+          {/* Price + CTA — always one row */}
+          <div className="flex items-center justify-between gap-1">
 
             {/* Prices */}
-            <div className="flex items-baseline gap-2 min-w-0">
+            <div className="flex items-baseline gap-1 min-w-0 shrink-0">
               {priceText && (
-                <span className="text-[22px] font-extrabold tracking-tight text-black leading-none">
+                <span className="text-[11px] md:text-[22px] font-extrabold tracking-tight text-black leading-none">
                   {priceText}
                 </span>
               )}
               {hasOldPrice && (
-                <span className="text-[13px] font-medium text-black/30 line-through">
+                <span className="hidden md:inline text-[13px] font-medium text-black/30 line-through">
                   {money(oldPriceNum)}₮
                 </span>
               )}
@@ -277,18 +278,18 @@ export default function CourseCard({ course, isPurchased, href }: Props) {
 
             {/* CTA */}
             {isPurchased ? (
-              <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-black/8 bg-black/[0.03] px-3.5 py-2 text-[12px] font-semibold text-black/50">
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M9 12l2 2 4-4"/></svg>
+              <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-black/8 bg-black/[0.03] px-2 py-1.5 md:px-3.5 md:py-2 text-[8px] md:text-[12px] font-semibold text-black/50">
+                <svg className="h-2.5 w-2.5 md:h-3.5 md:w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M9 12l2 2 4-4"/></svg>
                 Нээлттэй
               </span>
             ) : (
               <button
                 type="button"
                 onClick={onBuyClick}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-black/10 px-4 py-2 text-[13px] font-bold text-black shadow-[0_4px_14px_rgba(241,196,91,0.35)] transition-all hover:brightness-105 hover:-translate-y-px active:translate-y-0 active:shadow-none"
+                className="shrink-0 inline-flex items-center gap-1 rounded-full border border-black/10 px-2 py-1.5 md:px-4 md:py-2 text-[8px] md:text-[13px] font-bold text-black shadow-[0_3px_10px_rgba(241,196,91,0.4)] transition-all hover:brightness-105 active:scale-95"
                 style={{ background: "linear-gradient(135deg,#F4D27A,#F1C45B)" }}
               >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <svg className="h-2.5 w-2.5 md:h-3.5 md:w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
                   <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
                 </svg>

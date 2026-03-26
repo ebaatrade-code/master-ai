@@ -109,22 +109,56 @@ export default function AboutPage() {
           0%,100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.4); }
           50%     { box-shadow: 0 0 0 14px rgba(124,58,237,0); }
         }
+        /* ── Mobile: bento grid stack ── */
+        @media (max-width: 639px) {
+          .about-bento {
+            grid-template-columns: 1fr !important;
+            grid-template-rows: auto !important;
+          }
+          .about-bento-left {
+            grid-row: auto !important;
+            min-height: 280px !important;
+          }
+          .about-bento-stat {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            gap: 20px !important;
+          }
+          .about-bento-stat-num {
+            font-size: 42px !important;
+            white-space: nowrap !important;
+          }
+          .about-bento-stat-chart {
+            flex: 1 !important;
+          }
+          .about-label-line {
+            display: none !important;
+          }
+          .about-heading {
+            font-size: 28px !important;
+          }
+          .about-wrap {
+            padding-top: 56px !important;
+            padding-bottom: 60px !important;
+          }
+        }
       `}</style>
 
-      <div className="mx-auto max-w-5xl px-4 pt-20 pb-24 sm:px-6">
+      <div className="about-wrap mx-auto max-w-5xl px-4 pt-20 pb-24 sm:px-6">
 
         {/* ── LABEL ── */}
         <div className="flex items-center justify-center gap-4 mb-8">
-          <div style={{ height: "1px", width: "56px", background: "linear-gradient(to right, transparent, #a78bfa)" }} />
-          <span style={{ fontSize: "28px", fontWeight: 700, letterSpacing: "0.22em", color: "#7c3aed" }}>
+          <div className="about-label-line" style={{ height: "1px", width: "56px", background: "linear-gradient(to right, transparent, #a78bfa)" }} />
+          <span style={{ fontSize: "22px", fontWeight: 700, letterSpacing: "0.22em", color: "#7c3aed" }}>
             БИДНИЙ ТУХАЙ
           </span>
-          <div style={{ height: "1px", width: "56px", background: "linear-gradient(to left, transparent, #a78bfa)" }} />
+          <div className="about-label-line" style={{ height: "1px", width: "56px", background: "linear-gradient(to left, transparent, #a78bfa)" }} />
         </div>
 
         {/* ── HEADING ── */}
         <h1
-          className="text-center font-extrabold tracking-tight leading-[1.12]"
+          className="about-heading text-center font-extrabold tracking-tight leading-[1.12]"
           style={{ fontSize: "clamp(34px, 6vw, 50px)", color: "#0f0d1a", marginBottom: "20px" }}
         >
           AI-г{" "}
@@ -158,7 +192,7 @@ export default function AboutPage() {
 
         {/* ── BENTO GRID ── */}
         <div
-          className="grid gap-4"
+          className="about-bento grid gap-4"
           style={{
             gridTemplateColumns: "minmax(0,3fr) minmax(0,2fr)",
             gridTemplateRows: "auto auto",
@@ -166,6 +200,7 @@ export default function AboutPage() {
         >
           {/* LEFT dark card — spans both rows */}
           <div
+            className="about-bento-left"
             style={{
               gridRow: "1 / 3",
               background: "linear-gradient(145deg, #1c1545 0%, #2b1b61 55%, #1e2050 100%)",
@@ -237,21 +272,23 @@ export default function AboutPage() {
           </div>
 
           {/* TOP RIGHT — Stat + mini chart */}
-          <div style={{ background: "#fff", borderRadius: "24px", padding: "24px", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-            <div style={{
-              fontSize: "54px", fontWeight: 900, lineHeight: 1,
-              background: "linear-gradient(130deg, #ec4899 0%, #8b5cf6 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}>
-              1,432
-            </div>
-            <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.16em", color: "#9ca3af", marginTop: "5px", textTransform: "uppercase" }}>
-              Суралцагч
+          <div className="about-bento-stat" style={{ background: "#fff", borderRadius: "24px", padding: "24px", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+            <div>
+              <div className="about-bento-stat-num" style={{
+                fontSize: "54px", fontWeight: 900, lineHeight: 1,
+                background: "linear-gradient(130deg, #ec4899 0%, #8b5cf6 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}>
+                1,432
+              </div>
+              <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.16em", color: "#9ca3af", marginTop: "5px", textTransform: "uppercase" }}>
+                Суралцагч
+              </div>
             </div>
 
             {/* Bar chart */}
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "3px", height: "52px", marginTop: "18px" }}>
+            <div className="about-bento-stat-chart" style={{ display: "flex", alignItems: "flex-end", gap: "3px", height: "52px", marginTop: "18px" }}>
               {BAR_HEIGHTS.map((h, i) => (
                 <div
                   key={i}

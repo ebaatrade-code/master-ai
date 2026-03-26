@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
@@ -25,14 +25,9 @@ type Course = {
 
 export default function ContentsPage() {
   // ✅ role авна (admin бол бүхнийг харуулахад хэрэгтэй)
-  const { user, userDoc, loading, purchasedCourseIds, role } = useAuth() as any;
+  const { user, userDoc, loading, role } = useAuth() as any;
 
-  const purchasedSet = useMemo(
-    () => new Set(purchasedCourseIds ?? []),
-    [purchasedCourseIds]
-  );
-
-  function hasValidCourseAccess(courseId: string): boolean {
+function hasValidCourseAccess(courseId: string): boolean {
     if (!user) return false;
     const purchase = userDoc?.purchases?.[courseId];
     if (!purchase) return false;
@@ -114,8 +109,8 @@ export default function ContentsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10 text-black">
-      <h2 className="text-3xl font-extrabold">Контентууд</h2>
+    <main className="mx-auto max-w-6xl px-3 py-6 md:px-4 md:py-10 text-black">
+      <h2 className="text-2xl md:text-3xl font-extrabold">Контентууд</h2>
       <p className="mt-2 text-sm text-black/60"></p>
 
       {!loading && !user ? (
@@ -129,7 +124,7 @@ export default function ContentsPage() {
           Одоогоор контент алга байна.
         </div>
       ) : (
-        <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 md:gap-6">
           {courses.map((c) => {
             return (
               <CourseCard
